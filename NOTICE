@@ -1,0 +1,14 @@
+LoRaGotchi DX
+Copyright (c) 2026 Robert Rayner / M0YNW
+
+This project is derived from and built on MeshCore firmware.
+MeshCore copyright (c) 2025 Scott Powell / rippleradios.com.
+MeshCore is distributed under the MIT License; its original copyright and
+license notice are preserved in LICENSE and in relevant source files.
+
+LoRaGotchi DX adds virtual-pet gameplay and UI, LoRaGotchi DX/LFG1 fish
+visiting and recall behaviour, visitor rendering, and device-specific UI
+integration on top of the MeshCore transport.
+
+Third-party components retain their respective copyright and license notices
+in their source files and bundled library metadata.
