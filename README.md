@@ -32,6 +32,26 @@ PlatformIO environment:
 pio run -e Heltec_v3_LoRaFish_companion_ble
 ```
 
+### Heltec WiFi LoRa 32 V4 (OLED)
+
+PlatformIO environment:
+
+```bash
+pio run -e heltec_v4_LoRaFish_companion_ble
+```
+
+### Heltec T096 (nRF52840, TFT)
+
+PlatformIO environment:
+
+```bash
+pio run -e Heltec_t096_LoRaFish_companion_ble -t create_uf2
+```
+
+The T096 target uses its existing BLE companion transport, TFT display, and external GNSS support. After the build, enter the board's UF2 bootloader and copy `.pio/build/Heltec_t096_LoRaFish_companion_ble/firmware.uf2` to its mounted drive. Device-level validation is still needed.
+
+LoRaGotchi appearance settings are in **Options**. Color TFTs offer four firmware themes and six fish colors; monochrome OLEDs offer dark and paper themes, while fish color selections are saved but cannot be shown in color on the OLED.
+
 The project tree also retains the wider upstream MeshCore targets and infrastructure from which LoRaGotchi is derived.
 
 ## Building
@@ -50,11 +70,13 @@ or:
 pio run -e Heltec_v3_LoRaFish_companion_ble
 ```
 
-Upload with PlatformIO using the normal `-t upload` target for your connected board.
+Upload with PlatformIO using the normal `-t upload` target for supported serial-programmed boards. The T096 uses the UF2 procedure above.
 
 ## DX behaviour
 
 A LoRaGotchi can request a visit to another compatible peer. The peer reserves a guest slot, acknowledges the request, accepts the committed visitor, and confirms arrival. Recall returns the visiting fish to its home device. Protocol messages are designed to tolerate repeated transaction messages during a session.
+
+DX commits include the visitor's color capability and selected fish color. Color-capable tanks render colored visitors in their chosen hue and monochrome visitors in cyan; monochrome displays render visitors using the active foreground color. A fish returning from a monochrome host briefly shakes back into its saved home color.
 
 DX travel state is intentionally **session state** in v1.0: rebooting a LoRaGotchi returns its local fish home and empties its guest slot. Normal pet/game state remains persistent.
 

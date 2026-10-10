@@ -20,6 +20,7 @@ public:
 
   int width() const { return _w; }
   int height() const { return _h; }
+  virtual bool supportsColor() const { return false; }
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers

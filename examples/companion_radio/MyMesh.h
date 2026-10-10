@@ -20,12 +20,17 @@ struct LoRaGotchiDXGuestState {
   bool reserved=false, present=false;
   uint32_t txid=0, fishid=0;
   uint8_t stage=2;
+  uint8_t color=0;
+  bool colorCapable=false;
   char guestName[24]="DX Fish";
   char homeName[32]="";
 };
 
 extern LoRaGotchiDXHomeState loragotchiDXHome;
 extern LoRaGotchiDXGuestState loragotchiDXGuest;
+extern bool loragotchiDXLocalColorCapable;
+extern uint8_t loragotchiDXLocalColorIndex;
+extern bool loragotchiDXReturnedFromMonochrome;
 void loragotchiDXLoad();
 void loragotchiDXSave();
 #endif
