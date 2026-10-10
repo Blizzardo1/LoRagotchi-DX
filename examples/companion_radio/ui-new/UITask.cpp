@@ -74,12 +74,83 @@ static unsigned long fishLastSave = 0;
 static unsigned long fishReactionUntil = 0;
 static uint8_t fishReaction = 0; // 0 normal, 1 RX, 2 TX/ACK, 3 new contact
 
-static uint8_t loRaFishPage = 0; // 0 aquarium, 1 stats, 2 clock, 3 phone pairing, 4 DX visit, 5 options, 6 RF monitor
-static uint8_t loRaFishOption = 0; // 0 screen timeout, 1 reset pet
-static constexpr uint8_t LORAFISH_PAGE_COUNT = 7;
+static uint8_t loRaFishPage = 0; // 0 aquarium, 1 stats, 2 clock, 3 pairing, 4 DX, 5 options, 6 RF, 7 GNSS, 8 theme, 9 fish color
+static uint8_t loRaFishOption = 0; // timeout, reset, RF, GNSS, theme, fish color
+static constexpr uint8_t LORAFISH_PAGE_COUNT = 8;
 static int8_t loRaFishRfHistory[48] = {0};
 static uint8_t loRaFishRfHistoryCount = 0;
 static uint32_t loRaFishRfSeenSeq = 0;
+static uint8_t loRaFishTheme = 0;
+static uint8_t loRaFishColor = 0;
+static bool loRaFishColorDisplay = false;
+
+struct LoRaFishThemePalette {
+  const char* name;
+  ColorVal background;
+  ColorVal titleBackground;
+  ColorVal titleText;
+  ColorVal primaryText;
+  ColorVal secondaryText;
+  ColorVal warningText;
+  ColorVal popupBackground;
+  ColorVal popupText;
+  ColorVal accent;
+};
+
+static const LoRaFishThemePalette loRaFishThemes[] = {
+  {"Midnight", 0x0861, 0x1193, 0xFFFF, 0xEF7D, 0x9CF3, 0xFFE0, 0x1082, 0xFFFF, 0x07FF},
+  {"Paper",    0xFFFF, 0x001F, 0xFFFF, 0x0000, 0x7BEF, 0xF800, 0xCE79, 0x0000, 0x041F},
+  {"Lagoon",   0x0128, 0x03B0, 0xFFFF, 0xDFFF, 0x7DDF, 0xFEA0, 0x032A, 0xFFFF, 0x4DFF},
+  {"Sunset",   0x3006, 0xA205, 0xFFFF, 0xFFF1, 0xFD20, 0xF800, 0x5805, 0xFFFF, 0xF9A6},
+};
+static constexpr uint8_t LORAFISH_COLOR_THEME_COUNT = sizeof(loRaFishThemes) / sizeof(loRaFishThemes[0]);
+static const char* loRaFishColorNames[] = {"Coral", "Tangerine", "Gold", "Mint", "Lagoon", "Orchid"};
+static const ColorVal loRaFishColors[] = {0xF986, 0xFC00, 0xFFE0, 0x07E0, 0x07FF, 0xF81F};
+static constexpr uint8_t LORAFISH_FISH_COLOR_COUNT = sizeof(loRaFishColors) / sizeof(loRaFishColors[0]);
+
+static uint8_t loRaFishThemeCount() {
+  return loRaFishColorDisplay ? LORAFISH_COLOR_THEME_COUNT : 2;
+}
+
+static void applyLoRaFishTheme() {
+  const LoRaFishThemePalette& theme=loRaFishThemes[loRaFishTheme % loRaFishThemeCount()];
+  if (!loRaFishColorDisplay) {
+    const bool light=(loRaFishTheme == 1);
+    const ColorVal background=light ? 1 : 0;
+    const ColorVal foreground=light ? 0 : 1;
+    UIColor::window_bkg=background;
+    UIColor::title_bkg=background;
+    UIColor::title_txt=foreground;
+    UIColor::primary_txt=foreground;
+    UIColor::secondary_txt=foreground;
+    UIColor::warning_txt=foreground;
+    UIColor::popup_bkg=background;
+    UIColor::popup_txt=foreground;
+    UIColor::corp_blue=foreground;
+    return;
+  }
+  UIColor::window_bkg=theme.background;
+  UIColor::title_bkg=theme.titleBackground;
+  UIColor::title_txt=theme.titleText;
+  UIColor::primary_txt=theme.primaryText;
+  UIColor::secondary_txt=theme.secondaryText;
+  UIColor::warning_txt=theme.warningText;
+  UIColor::popup_bkg=theme.popupBackground;
+  UIColor::popup_txt=theme.popupText;
+  UIColor::corp_blue=theme.accent;
+}
+
+static ColorVal loRaFishSelectedColor() {
+  return loRaFishColorDisplay ? loRaFishColors[loRaFishColor % LORAFISH_FISH_COLOR_COUNT]
+                              : UIColor::primary_txt;
+}
+static unsigned long loRaFishReturnShakeUntil = 0;
+
+static ColorVal loRaFishGuestColor() {
+  if (!loRaFishColorDisplay) return UIColor::primary_txt;
+  if (!loragotchiDXGuest.colorCapable) return 0x07FF;
+  return loRaFishColors[loragotchiDXGuest.color % LORAFISH_FISH_COLOR_COUNT];
+}
 
 // Lifecycle presentation: egg for first 5 minutes, then normal fish stages.
 // At 7 days the pet reaches the end of its life and shows a memorial screen.
@@ -162,7 +233,7 @@ static constexpr unsigned long LORAFISH_CLEAN_MS = 1400UL;
 static void scheduleLoRaFishPoop() {
   // 30-90 seconds after a meal. A pending poop is not rescheduled by another meal.
   if (loRaFishNextPoopAt == 0 && loRaFishPoopCount < LORAFISH_MAX_POOP)
-    loRaFishNextPoopAt = millis() + 30000UL + (esp_random() % 60001UL);
+    loRaFishNextPoopAt = millis() + 30000UL + (random(60001L));
 }
 
 static bool tickLoRaFishPoop() {
@@ -237,6 +308,7 @@ static bool loRaFishClock(char* timeBuf, size_t timeLen,
   uint32_t epoch = loRaFishRTC ? loRaFishRTC->getCurrentTime() : 0;
 
   if (loRaFishMeshTimeValid(epoch)) {
+#ifdef ESP32
     time_t raw = (time_t)epoch;
     struct tm tmv;
     setenv("TZ", "GMT0BST,M3.5.0/1,M10.5.0/2", 1);
@@ -247,6 +319,13 @@ static bool loRaFishClock(char* timeBuf, size_t timeLen,
                               "Jul","Aug","Sep","Oct","Nov","Dec"};
     snprintf(dateBuf, dateLen, "%02d %s %04d",
              tmv.tm_mday, mon[tmv.tm_mon], tmv.tm_year+1900);
+  #else
+    DateTime dt(epoch);
+    static const char* mon[]={"Jan","Feb","Mar","Apr","May","Jun",
+                  "Jul","Aug","Sep","Oct","Nov","Dec"};
+    snprintf(timeBuf,timeLen,"%02u:%02u",dt.hour(),dt.minute());
+    snprintf(dateBuf,dateLen,"%02u %s %04u",dt.day(),mon[dt.month()-1],dt.year());
+  #endif
     return true;
   }
 
@@ -281,9 +360,18 @@ static const char* fishStageName() {
 static void saveLoRaFishSettings() {
 #ifdef ESP32
   File f = SPIFFS.open("/lorafish.cfg", FILE_WRITE);
+#elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  InternalFS.remove("/lorafish.cfg");
+  File f = InternalFS.open("/lorafish.cfg", FILE_O_WRITE);
+#else
+  File f;
+#endif
+#if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   if (f) {
     f.write(&loRaFishTimeoutSetting, 1);
     f.write(&loRaFishPoopCount, 1);
+    f.write(&loRaFishTheme, 1);
+    f.write(&loRaFishColor, 1);
     f.close();
   }
 #endif
@@ -292,11 +380,21 @@ static void saveLoRaFishSettings() {
 static void loadLoRaFishSettings() {
 #ifdef ESP32
   File f = SPIFFS.open("/lorafish.cfg", FILE_READ);
+#elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  File f = InternalFS.open("/lorafish.cfg", FILE_O_READ);
+#else
+  File f;
+#endif
+#if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   if (f) {
     uint8_t v=0;
     if (f.read(&v,1)==1 && v<=3) loRaFishTimeoutSetting=v;
     uint8_t poop=0;
     if (f.read(&poop,1)==1 && poop<=LORAFISH_MAX_POOP) loRaFishPoopCount=poop;
+    uint8_t theme=0;
+    if (f.read(&theme,1)==1 && theme<loRaFishThemeCount()) loRaFishTheme=theme;
+    uint8_t color=0;
+    if (f.read(&color,1)==1 && color<LORAFISH_FISH_COLOR_COUNT) loRaFishColor=color;
     f.close();
   }
 #endif
@@ -305,6 +403,13 @@ static void loadLoRaFishSettings() {
 static void saveLoRaFish() {
 #ifdef ESP32
   File f = SPIFFS.open("/lorafish.dat", FILE_WRITE);
+#elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  InternalFS.remove("/lorafish.dat");
+  File f = InternalFS.open("/lorafish.dat", FILE_O_WRITE);
+#else
+  File f;
+#endif
+#if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   if (f) {
     f.write((const uint8_t*)&fish, sizeof(fish));
     f.close();
@@ -316,6 +421,12 @@ static void saveLoRaFish() {
 static void loadLoRaFish() {
 #ifdef ESP32
   File f = SPIFFS.open("/lorafish.dat", FILE_READ);
+#elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  File f = InternalFS.open("/lorafish.dat", FILE_O_READ);
+#else
+  File f;
+#endif
+#if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   if (f && f.size() == sizeof(fish)) {
     LoRaFishState tmp;
     if (f.read((uint8_t*)&tmp, sizeof(tmp)) == sizeof(tmp) &&
@@ -392,7 +503,7 @@ static void fishLine(DisplayDriver& display, int x0, int y0, int x1, int y1) {
 // helper
 
 static void maskAdultFishSprite(DisplayDriver& d, int x, int y, bool right) {
-  d.setColor(UIColor::popup_bkg);
+  d.setColor(UIColor::window_bkg);
 
   if (right) {
     // Fill the rounded body interior.
@@ -479,7 +590,7 @@ static void maskAdultFishSprite(DisplayDriver& d, int x, int y, bool right) {
   }
 }
 
-static void drawAdultFishSprite(DisplayDriver& display, int x, int y, bool right) {
+static void drawAdultFishSprite(DisplayDriver& display, int x, int y, bool right, ColorVal fishColor) {
   // V0.3.1: recognisable aquarium fish designed for the real monochrome OLED.
   // Approx. 29x17 pixels. Mostly outline/detail rather than one solid blob.
   display.setColor(UIColor::primary_txt);
@@ -488,7 +599,7 @@ static void drawAdultFishSprite(DisplayDriver& display, int x, int y, bool right
   maskAdultFishSprite(display, x, y, right);
 
   // Now draw the fish normally.
-  display.setColor(UIColor::primary_txt);
+  display.setColor(fishColor);
 
   if (right) {
     // Forked tail.
@@ -566,9 +677,9 @@ static void drawAdultFishSprite(DisplayDriver& display, int x, int y, bool right
 
   display.setColor(UIColor::primary_txt);
 }
-static void drawFryFishSprite(DisplayDriver& d, int x, int y, bool right) {
+static void drawFryFishSprite(DisplayDriver& d, int x, int y, bool right, ColorVal fishColor) {
   // Opaque mask
-  d.setColor(UIColor::popup_bkg);
+  d.setColor(UIColor::window_bkg);
 
   if (right) {
     // Tail interior
@@ -591,7 +702,7 @@ static void drawFryFishSprite(DisplayDriver& d, int x, int y, bool right) {
 
 
   
-  d.setColor(UIColor::primary_txt);
+  d.setColor(fishColor);
 
   // Tiny fry: small body with a proportionally large tail.
   if (right) {
@@ -611,10 +722,10 @@ static void drawFryFishSprite(DisplayDriver& d, int x, int y, bool right) {
   }
 }
 
-static void drawYoungFishSprite(DisplayDriver& d, int x, int y, bool right) {
+static void drawYoungFishSprite(DisplayDriver& d, int x, int y, bool right, ColorVal fishColor) {
 
  // Opaque mask
-  d.setColor(UIColor::popup_bkg);
+  d.setColor(UIColor::window_bkg);
 
   if (right) {
     // Tail
@@ -650,7 +761,7 @@ static void drawYoungFishSprite(DisplayDriver& d, int x, int y, bool right) {
 
 
 
-  d.setColor(UIColor::primary_txt);
+  d.setColor(fishColor);
 
   // Juvenile: longer/slimmer than fry with its first proper dorsal fin.
   if (right) {
@@ -674,8 +785,8 @@ static void drawYoungFishSprite(DisplayDriver& d, int x, int y, bool right) {
   }
 }
 
-static void drawElderFishSprite(DisplayDriver& d, int x, int y, bool right) {
-  d.setColor(UIColor::popup_bkg);
+static void drawElderFishSprite(DisplayDriver& d, int x, int y, bool right, ColorVal fishColor) {
+  d.setColor(UIColor::window_bkg);
 
   if (right) {
     for (int i = 0; i < 3; i++) {
@@ -692,8 +803,8 @@ static void drawElderFishSprite(DisplayDriver& d, int x, int y, bool right) {
   }
 
   // Keep the known-good adult fish, then add longer flowing fins.
-  drawAdultFishSprite(d,x,y,right);
-  d.setColor(UIColor::primary_txt);
+  drawAdultFishSprite(d,x,y,right,fishColor);
+  d.setColor(fishColor);
 
   if (right) {
     fishLine(d,x-14,y-6, x-17,y-8);
@@ -706,17 +817,32 @@ static void drawElderFishSprite(DisplayDriver& d, int x, int y, bool right) {
   }
 }
 
-static void drawFishSpriteForStage(DisplayDriver& d,int x,int y,bool right,uint8_t stage) {
+static void drawFishSpriteForStage(DisplayDriver& d,int x,int y,bool right,uint8_t stage,ColorVal fishColor) {
   switch(stage) {
-    case 0: drawFryFishSprite(d,x,y,right); break;
-    case 1: drawYoungFishSprite(d,x,y,right); break;
-    case 2: drawAdultFishSprite(d,x,y,right); break;
-    default: drawElderFishSprite(d,x,y,right); break;
+    case 0: drawFryFishSprite(d,x,y,right,fishColor); break;
+    case 1: drawYoungFishSprite(d,x,y,right,fishColor); break;
+    case 2: drawAdultFishSprite(d,x,y,right,fishColor); break;
+    default: drawElderFishSprite(d,x,y,right,fishColor); break;
   }
 }
 
-static void drawFishSprite(DisplayDriver& d,int x,int y,bool right) {
-  drawFishSpriteForStage(d,x,y,right,fish.evolution);
+static void drawFishSprite(DisplayDriver& d,int x,int y,bool right,ColorVal fishColor) {
+  drawFishSpriteForStage(d,x,y,right,fish.evolution,fishColor);
+}
+
+static void drawHomeFishSprite(DisplayDriver& display,int x,int y,bool right) {
+  if (loragotchiDXReturnedFromMonochrome) {
+    loragotchiDXReturnedFromMonochrome=false;
+    loRaFishReturnShakeUntil=millis()+2400UL;
+  }
+
+  ColorVal color=loRaFishSelectedColor();
+  if (loRaFishColorDisplay && (long)(loRaFishReturnShakeUntil-millis())>0) {
+    const unsigned long phase=millis();
+    if ((phase/180UL)&1UL) color=0xFFFF;
+    x += ((phase/70UL)&1UL) ? 2 : -2;
+  }
+  drawFishSprite(display,x,y,right,color);
 }
 
 static void drawLoRaFishHeader(DisplayDriver& display, const char* title,
@@ -762,23 +888,19 @@ static void drawLoRaFishMemorial(DisplayDriver& display) {
   display.drawTextCentered(w/2,h-9,"Long press reset in OPTIONS");
 }
 
-static void drawLoRaFishOptions(DisplayDriver& display) {
+static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
   const int w=display.width();
-
-  const char* right="";
-  if (loRaFishOption==0) right="TIMEOUT";
-  else if (loRaFishOption==1) right="RESET";
-  else right="BACK";
-
-  drawLoRaFishHeader(display,"OPTIONS",right);
+  static const char* labels[]={"Screen timeout","Reset pet","RF monitor","GNSS monitor","Firmware theme","Fish color"};
+  const uint8_t first=loRaFishOption>3 ? loRaFishOption-3 : 0;
+  drawLoRaFishHeader(display,"OPTIONS","");
   display.setColor(UIColor::primary_txt);
-
-  display.setCursor(4,21);
-  display.print(loRaFishOption==0 ? "> Screen timeout" : "  Screen timeout");
-  display.setCursor(4,32);
-  display.print(loRaFishOption==1 ? "> Reset pet" : "  Reset pet");
-  display.setCursor(4,43);
-  display.print(loRaFishOption==2 ? "> RF monitor" : "  RF monitor");
+  for (uint8_t row=0; row<4 && first+row<6; row++) {
+    const uint8_t option=first+row;
+    char line[24];
+    snprintf(line,sizeof(line),"%c %s",option==loRaFishOption ? '>' : ' ',labels[option]);
+    display.setCursor(3,17+row*9);
+    display.print(line);
+  }
 
   display.setColor(UIColor::secondary_txt);
   if (loRaFishOption==0) {
@@ -786,9 +908,50 @@ static void drawLoRaFishOptions(DisplayDriver& display) {
     display.drawTextCentered(w/2,56,labels[loRaFishTimeoutSetting]);
   } else if (loRaFishOption==1) {
     display.drawTextCentered(w/2,56,"LONG PRESS to reset");
-  } else {
+  } else if (loRaFishOption==2 || loRaFishOption==3) {
     display.drawTextCentered(w/2,56,"LONG PRESS to open");
+  } else if (loRaFishOption==4) {
+    display.drawTextCentered(w/2,56,"LONG PRESS: THEMES");
+  } else {
+    display.drawTextCentered(w/2,56,"LONG PRESS: FISH COLOR");
   }
+}
+
+static void drawLoRaFishThemeMenu(DisplayDriver& display) {
+  const int w=display.width();
+  const LoRaFishThemePalette& theme=loRaFishThemes[loRaFishTheme % loRaFishThemeCount()];
+  drawLoRaFishHeader(display,"FIRMWARE THEME",theme.name);
+
+  display.setColor(theme.primaryText);
+  display.drawTextCentered(w/2,21,theme.name);
+  const int swatchY=34;
+  const int swatchW=22;
+  const int gap=5;
+  const int left=(w-(swatchW*4+gap*3))/2;
+  display.setColor(UIColor::title_bkg);
+  display.fillRect(left,swatchY,swatchW,11);
+  display.setColor(UIColor::corp_blue);
+  display.fillRect(left+swatchW+gap,swatchY,swatchW,11);
+  display.setColor(UIColor::warning_txt);
+  display.fillRect(left+(swatchW+gap)*2,swatchY,swatchW,11);
+  display.setColor(UIColor::secondary_txt);
+  display.fillRect(left+(swatchW+gap)*3,swatchY,swatchW,11);
+
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2,55,loRaFishColorDisplay ? "CLICK NEXT  LONG BACK" : "MONO: DARK / PAPER");
+}
+
+static void drawLoRaFishColorMenu(DisplayDriver& display) {
+  const int w=display.width();
+  drawLoRaFishHeader(display,"FISH COLOR",loRaFishColorNames[loRaFishColor % LORAFISH_FISH_COLOR_COUNT]);
+
+  display.setColor(loRaFishSelectedColor());
+  display.fillRect(w/2-17,24,34,18);
+  display.drawRect(w/2-20,21,40,24);
+  display.setColor(UIColor::primary_txt);
+  display.drawTextCentered(w/2,43,loRaFishColorNames[loRaFishColor % LORAFISH_FISH_COLOR_COUNT]);
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2,56,loRaFishColorDisplay ? "CLICK NEXT  LONG BACK" : "FISH COLOR ON TFT");
 }
 
 static uint32_t loRaFishDXContactIndex=0;
@@ -946,6 +1109,36 @@ static void drawLoRaFishRFMonitor(DisplayDriver& display, UITask* task) {
   if(fill>0) display.fillRect(bx+2,by+2,fill,bh-4);
 }
 
+static void drawLoRaFishGNSS(DisplayDriver& display, UITask* task) {
+  const int w=display.width();
+  LocationProvider* location=sensors.getLocationProvider();
+  const bool enabled=task->getGPSState();
+  drawLoRaFishHeader(display,"GNSS",enabled ? "ON" : "OFF");
+
+  display.setColor(UIColor::primary_txt);
+  if (!location) {
+    display.drawTextCentered(w/2,27,"NO RECEIVER");
+  } else if (!enabled) {
+    display.drawTextCentered(w/2,27,"GNSS OFF");
+  } else {
+    display.drawTextCentered(w/2,22,location->isValid() ? "FIX" : "SEARCHING");
+    char line[32];
+    snprintf(line,sizeof(line),"SAT %ld",location->satellitesCount());
+    display.drawTextCentered(w/2,33,line);
+    if (location->isValid()) {
+      snprintf(line,sizeof(line),"%.4f %.4f",
+               location->getLatitude()/1000000.0,
+               location->getLongitude()/1000000.0);
+      display.drawTextCentered(w/2,44,line);
+    } else {
+      display.drawTextCentered(w/2,44,"WAITING FOR FIX");
+    }
+  }
+
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2,56,"LONG PRESS: TOGGLE");
+}
+
 
 static void drawLoRaFishBubbles(DisplayDriver& display) {
   const int h = display.height();
@@ -1088,12 +1281,12 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
     if (localSleeping) {
       const int sleepX = loragotchiDXGuest.present ? w/3 : w/2-5;
       const int sleepY = 38;
-      drawFishSprite(display,sleepX,sleepY,true);
+      drawHomeFishSprite(display,sleepX,sleepY,true);
       display.setColor(UIColor::primary_txt);
       display.setCursor(min(w-4,sleepX+12), max(17,sleepY-11)); display.print("z");
       display.setCursor(min(w-4,sleepX+19), max(12,sleepY-16)); display.print("Z");
     } else {
-      drawFishSprite(display,x,y,right);
+      drawHomeFishSprite(display,x,y,right);
     }
   } else if (!loragotchiDXGuest.present) {
     display.setColor(UIColor::secondary_txt);
@@ -1110,7 +1303,7 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
     else if(loragotchiDXGuest.stage==1) guestPeriod=6500UL;
     else if(loragotchiDXGuest.stage>=3) guestPeriod=11000UL;
     loRaFishNaturalPositionForStage(w,loragotchiDXGuest.stage,guestPeriod/2,gx,gy,gright);
-    drawFishSpriteForStage(display,gx,gy,gright,loragotchiDXGuest.stage);
+    drawFishSpriteForStage(display,gx,gy,gright,loragotchiDXGuest.stage,loRaFishGuestColor());
     display.setColor(UIColor::secondary_txt);
     display.drawTextCentered(w/2,27,loragotchiDXGuest.guestName);
   }
@@ -1215,7 +1408,7 @@ static void drawLoRaFishSleeping(DisplayDriver& display, UITask* task) {
   loRaFishClock(tb,sizeof(tb),db,sizeof(db));
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
 
- drawFishSprite(display,w/2-5,38,true);
+ drawHomeFishSprite(display,w/2-5,38,true);
 
 display.setColor(UIColor::primary_txt);
 
@@ -1243,8 +1436,11 @@ static void drawLoRaFish(DisplayDriver& display, UITask* task) {
     case 2: drawLoRaFishClockPage(display,task); break;
     case 3: drawLoRaFishPairing(display); break;
     case 4: drawLoRaFishDX(display); break;
-    case 5: drawLoRaFishOptions(display); break;
+    case 5: drawLoRaFishOptions(display,task); break;
     case 6: drawLoRaFishRFMonitor(display,task); break;
+    case 7: drawLoRaFishGNSS(display,task); break;
+    case 8: drawLoRaFishThemeMenu(display); break;
+    case 9: drawLoRaFishColorMenu(display); break;
     default:
       if (fish.ageMinutes >= LORAFISH_LIFESPAN_MINUTES) drawLoRaFishMemorial(display);
       else if (fish.ageMinutes < LORAFISH_EGG_MINUTES) drawLoRaFishEgg(display);
@@ -1674,7 +1870,15 @@ public:
     // Joystick-style targets may report KEY_ENTER, so accept either.
     if (c == KEY_ENTER || c == KEY_NEXT) {
       if (loRaFishPage == 5) {
-        loRaFishOption = (loRaFishOption + 1) % 3;
+        loRaFishOption = (loRaFishOption + 1) % 6;
+      } else if (loRaFishPage == 8) {
+        loRaFishTheme = (loRaFishTheme + 1) % loRaFishThemeCount();
+        applyLoRaFishTheme();
+        saveLoRaFishSettings();
+      } else if (loRaFishPage == 9) {
+        loRaFishColor = (loRaFishColor + 1) % LORAFISH_FISH_COLOR_COUNT;
+        loragotchiDXLocalColorIndex = loRaFishColor;
+        saveLoRaFishSettings();
       } else if (loRaFishPage == 4 && !loragotchiDXHome.away && !loragotchiDXHome.pending) {
         int n=the_mesh.getNumContacts();
         if(n>0) loRaFishDXContactIndex=(loRaFishDXContactIndex+1)%n;
@@ -1863,8 +2067,12 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   ui_started_at = millis();
 #ifdef LORAFISH_UI
+  loRaFishColorDisplay = display && display->supportsColor();
   loadLoRaFish();
   loadLoRaFishSettings();
+  applyLoRaFishTheme();
+  loragotchiDXLocalColorCapable = loRaFishColorDisplay;
+  loragotchiDXLocalColorIndex = loRaFishColor;
   loRaFishBootMs = millis();
 #endif
   _alert_expiry = 0;
@@ -2257,6 +2465,19 @@ char UITask::handleLongPress(char c) {
     return 0;
   }
 
+  if (loRaFishPage == 7) {
+    toggleGPS();
+    _next_refresh = 0;
+    return 0;
+  }
+
+  if (loRaFishPage == 8 || loRaFishPage == 9) {
+    loRaFishOption = loRaFishPage == 8 ? 4 : 5;
+    loRaFishPage = 5;
+    _next_refresh = 0;
+    return 0;
+  }
+
   if (loRaFishPage == 4) {
     ContactInfo c;
     if(!loRaFishDXGetContact(c)) { showAlert("No DX contact",700); return 0; }
@@ -2322,6 +2543,15 @@ char UITask::handleLongPress(char c) {
       loRaFishPage = 6;
       loRaFishOption = 0;
       _next_refresh = 0;
+    } else if (loRaFishOption == 3) {
+      loRaFishPage = 7;
+      _next_refresh = 0;
+    } else if (loRaFishOption == 4) {
+      loRaFishPage = 8;
+      _next_refresh = 0;
+    } else if (loRaFishOption == 5) {
+      loRaFishPage = 9;
+      _next_refresh = 0;
     }
 
     // Consume the event: don't let MeshCore act on the same long press.
@@ -2347,6 +2577,18 @@ char UITask::handleDoubleClick(char c) {
   if (loRaFishPage == 5) {
     loRaFishPage = 0;  // Options -> Aquarium
     loRaFishOption = 0;
+    _next_refresh = 0;
+    return 0;
+  }
+  if (loRaFishPage == 7) {
+    loRaFishPage = 5;  // GNSS monitor -> GNSS option
+    loRaFishOption = 3;
+    _next_refresh = 0;
+    return 0;
+  }
+  if (loRaFishPage == 8 || loRaFishPage == 9) {
+    loRaFishOption = loRaFishPage == 8 ? 4 : 5;
+    loRaFishPage = 5;
     _next_refresh = 0;
     return 0;
   }

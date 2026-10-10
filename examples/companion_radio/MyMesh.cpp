@@ -6,6 +6,9 @@
 #ifdef LORAFISH_UI
 LoRaGotchiDXHomeState loragotchiDXHome;
 LoRaGotchiDXGuestState loragotchiDXGuest;
+bool loragotchiDXLocalColorCapable = false;
+uint8_t loragotchiDXLocalColorIndex = 0;
+bool loragotchiDXReturnedFromMonochrome = false;
 
 static constexpr uint32_t LORAFISH_DX_STATE_MAGIC = 0x4C464732UL; // "LFG2"
 static constexpr uint16_t LORAFISH_DX_STATE_VERSION = 2;
@@ -58,6 +61,7 @@ void loragotchiDXLoad() {
   loragotchiDXHome = LoRaGotchiDXHomeState{};
   loragotchiDXHome.fishid = savedFishId;
   loragotchiDXGuest = LoRaGotchiDXGuestState{};
+  loragotchiDXReturnedFromMonochrome = false;
 
   Serial.println("[LFG1 PEER] BOOT: DX session cleared; local fish HOME; guest slot EMPTY");
 
@@ -541,7 +545,9 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     } else if (strncmp(text,"LFG1|ACK|",9)==0 &&
         sscanf(text+9,"%lu|%lu",&tx,&fid)==2 &&
         loragotchiDXHome.pending && tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
-      char msg[80]; snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu",tx,fid);
+      char msg[80]; snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu|%c|%u",tx,fid,
+        loragotchiDXLocalColorCapable ? 'C' : 'M',
+        (unsigned)loragotchiDXLocalColorIndex);
       uint32_t ack=0,to=0;
       int r=sendMessage(from,getRTCClock()->getCurrentTime(),0,msg,ack,to);
       if(r>=0) {
@@ -565,9 +571,13 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       loragotchiDXSave();
       Serial.println("*** DX FISH CONFIRMED ARRIVED ***");
     } else if (strncmp(text,"LFG1|COMMIT|",12)==0 &&
-               sscanf(text+12,"%lu|%lu",&tx,&fid)==2) {
+           sscanf(text+12,"%lu|%lu",&tx,&fid)==2) {
       if((loragotchiDXGuest.reserved || loragotchiDXGuest.present) &&
          tx==loragotchiDXGuest.txid && fid==loragotchiDXGuest.fishid) {
+      char colorMode='M'; unsigned color=0;
+      const int fields=sscanf(text+12,"%lu|%lu|%c|%u",&tx,&fid,&colorMode,&color);
+      loragotchiDXGuest.colorCapable=(fields>=4 && colorMode=='C' && color<6);
+      loragotchiDXGuest.color=loragotchiDXGuest.colorCapable ? (uint8_t)color : 0;
         const bool firstArrival = !loragotchiDXGuest.present;
         loragotchiDXGuest.reserved=false;
         loragotchiDXGuest.present=true;
@@ -592,13 +602,17 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       if(fid==loragotchiDXGuest.fishid &&
          (loragotchiDXGuest.present || loragotchiDXGuest.reserved)) {
         loragotchiDXGuest.present=false; loragotchiDXGuest.reserved=false; loragotchiDXSave();
-        char reply[80]; snprintf(reply,sizeof(reply),"LFG1|RETURN|%lu|%lu",tx,fid);
+        char reply[80]; snprintf(reply,sizeof(reply),"LFG1|RETURN|%lu|%lu|%c",tx,fid,
+          loragotchiDXLocalColorCapable ? 'C' : 'M');
         uint32_t ack=0,to=0; int r=sendMessage(from,getRTCClock()->getCurrentTime(),0,reply,ack,to);
         Serial.printf("[LFG1 PEER] RETURN TX result=%d\n",r);
       }
     } else if (strncmp(text,"LFG1|RETURN|",12)==0 &&
                sscanf(text+12,"%lu|%lu",&tx,&fid)==2 &&
                tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
+      char returnMode=0;
+      const bool hasReturnMode=sscanf(text+12,"%lu|%lu|%c",&tx,&fid,&returnMode)==3;
+      loragotchiDXReturnedFromMonochrome=hasReturnMode && returnMode=='M';
       loragotchiDXHome.pending=false; loragotchiDXHome.committing=false; loragotchiDXHome.away=false; loragotchiDXHome.returned=true; loragotchiDXSave();
       Serial.println("*** DX FISH RETURNED HOME ***");
     }

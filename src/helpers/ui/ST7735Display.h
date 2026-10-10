@@ -29,6 +29,7 @@ public:
 #endif
   bool begin();
 
+  bool supportsColor() const override { return true; }
   bool isOn() override { return _isOn; }
   void turnOn() override;
   void turnOff() override;

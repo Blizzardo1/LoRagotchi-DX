@@ -56,8 +56,9 @@ void SSD1306Display::clear() {
 }
 
 void SSD1306Display::startFrame(ColorVal bkg) {
-  display.clearDisplay();  // TODO: apply 'bkg'
-  _color = SSD1306_WHITE;
+  display.clearDisplay();
+  if (bkg != SSD1306_BLACK) display.fillScreen(bkg);
+  _color = UIColor::primary_txt;
   display.setTextColor(_color);
   display.setTextSize(1);
   display.cp437(true);         // Use full 256 char 'Code Page 437' font

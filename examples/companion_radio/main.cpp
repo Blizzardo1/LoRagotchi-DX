@@ -123,7 +123,8 @@ void setup() {
 
 #ifdef DISPLAY_CLASS
   DisplayDriver* disp = NULL;
-  if (display.begin()) {
+  bool display_ready = display.begin();
+  if (display_ready) {
     disp = &display;
     disp->startFrame();
   #ifdef ST7789
