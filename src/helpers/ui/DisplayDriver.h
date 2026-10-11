@@ -26,6 +26,7 @@ public:
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;
+  virtual void setBrightness(uint8_t brightness) {}
   virtual void clear() = 0;
   virtual void startFrame(ColorVal bkg = UIColor::window_bkg) = 0;
   virtual void setTextSize(int sz) = 0;
