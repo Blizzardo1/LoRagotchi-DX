@@ -33,8 +33,16 @@ public:
   {
     _isOn = false;
   }
+#elif defined(HELTEC_T114_WITH_DISPLAY)
+  // T114 TFT sits on SPI1 (SCK 40, MOSI 41), same bus as the ST7789Display driver
+  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64),
+      display(&SPI1, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST),
+      _peripher_power(peripher_power)
+  {
+    _isOn = false;
+  }
 #else
-  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64), 
+  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64),
       display(&SPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST),
       _peripher_power(peripher_power)
   {
@@ -43,6 +51,8 @@ public:
 #endif
   bool begin();
 
+  // RGB565 direct-draw: colour themes and fish colours render as set
+  bool supportsColor() const override { return true; }
   bool isOn() override { return _isOn; }
   void turnOn() override;
   void turnOff() override;

@@ -1614,7 +1614,11 @@ public:
   int render(DisplayDriver& display) override {
 #ifdef LORAFISH_UI
     drawLoRaFish(display, _task);
-    return 100; // smooth fish animation without blocking MeshCore
+    // Static pages (menus, stats, pairing) only need an occasional redraw; button
+    // presses reset _next_refresh in checkDisplayOn(), so they stay responsive.
+    if (loRaFishPage == 0) return 250;               // aquarium: animated
+    if (loRaFishPage == 2 || loRaFishPage == 4 || loRaFishPage == 6) return 1000;  // clock, DX, RF
+    return 2000;                                     // static pages
 #else
     display.setColor(UIColor::title_bkg);
     display.fillRect(0, 0, display.width(), 12);

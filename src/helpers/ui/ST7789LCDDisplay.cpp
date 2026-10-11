@@ -16,8 +16,18 @@
   #define DISPLAY_SCALE_Y 3.75f // 240 / 64
 #endif
 
-#define DISPLAY_WIDTH 240
-#define DISPLAY_HEIGHT 320
+// Panel size is overridable so boards like the T114 (135x240 panel, used landscape)
+// can reuse this driver. Defaults keep the 240x320 boards unchanged.
+#ifndef DISPLAY_WIDTH
+  #define DISPLAY_WIDTH 240
+#endif
+#ifndef DISPLAY_HEIGHT
+  #define DISPLAY_HEIGHT 320
+#endif
+
+#ifndef TFT_SPI_SPEED
+  #define TFT_SPI_SPEED 40e6
+#endif
 
 bool ST7789LCDDisplay::i2c_probe(TwoWire& wire, uint8_t addr) {
   return true;
@@ -38,9 +48,22 @@ bool ST7789LCDDisplay::begin() {
   if (!_isOn) {
     if (_peripher_power) _peripher_power->claim();
 
+    // Panel power rail (T114: VDD_CTL is active low). Boards that define it as -1 skip this.
+    #ifdef PIN_TFT_VDD_CTL
+    if (PIN_TFT_VDD_CTL != -1) {
+      pinMode(PIN_TFT_VDD_CTL, OUTPUT);
+      digitalWrite(PIN_TFT_VDD_CTL, LOW);
+    }
+    #endif
+
     if (PIN_TFT_LEDA_CTL != -1) {
       pinMode(PIN_TFT_LEDA_CTL, OUTPUT);
-      digitalWrite(PIN_TFT_LEDA_CTL, HIGH);
+      // Backlight polarity: default HIGH (existing boards); T114 sets PIN_TFT_LEDA_CTL_ACTIVE=LOW
+      #ifdef PIN_TFT_LEDA_CTL_ACTIVE
+        digitalWrite(PIN_TFT_LEDA_CTL, PIN_TFT_LEDA_CTL_ACTIVE);
+      #else
+        digitalWrite(PIN_TFT_LEDA_CTL, HIGH);
+      #endif
     }
 
     // Im not sure if this is just a t-deck problem or not, if your display is slow try this.
@@ -51,7 +74,7 @@ bool ST7789LCDDisplay::begin() {
     display.init(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     display.setRotation(DISPLAY_ROTATION);
 
-    display.setSPISpeed(40e6);
+    display.setSPISpeed(TFT_SPI_SPEED);
 
     display.fillScreen(ST77XX_BLACK);
     display.setTextColor(ST77XX_WHITE);
@@ -68,16 +91,20 @@ void ST7789LCDDisplay::turnOn() {
   ST7789LCDDisplay::begin();
 }
 
+// "Off" level for the backlight pin, following the board's polarity
+#ifdef PIN_TFT_LEDA_CTL_ACTIVE
+  #define TFT_BL_OFF (PIN_TFT_LEDA_CTL_ACTIVE == LOW ? HIGH : LOW)
+#else
+  #define TFT_BL_OFF LOW
+#endif
+
 void ST7789LCDDisplay::turnOff() {
   if (_isOn) {
     if (PIN_TFT_LEDA_CTL != -1) {
-      digitalWrite(PIN_TFT_LEDA_CTL, HIGH);
+      digitalWrite(PIN_TFT_LEDA_CTL, TFT_BL_OFF);
     }
     if (PIN_TFT_RST != -1) {
       digitalWrite(PIN_TFT_RST, LOW);
-    }
-    if (PIN_TFT_LEDA_CTL != -1) {
-      digitalWrite(PIN_TFT_LEDA_CTL, LOW);
     }
     _isOn = false;
 
