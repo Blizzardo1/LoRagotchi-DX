@@ -52,6 +52,10 @@ The T096 target uses its existing BLE companion transport, TFT display, and exte
 
 LoRaGotchi appearance settings are in **Options**. Color TFTs offer four firmware themes and six fish colors; monochrome OLEDs offer dark and paper themes, while fish color selections are saved but cannot be shown in color on the OLED.
 
+**Schedule & Time** settings let you choose the pet's sleep hour, wake hour, and manual UTC offset in 15-minute steps. Defaults are sleep at 21:00, wake at 07:00, and UTC. Automatic timezone detection is not included; GPS coordinates alone do not identify political timezone or daylight-saving rules without a timezone database.
+
+Open **Options → Schedule & Time**. Short-click adjusts the selected value, double-click selects the next field, and long-press returns to Options. Set the UTC offset to the current local offset, including daylight saving when applicable; equal sleep and wake hours keep the fish awake all day.
+
 The project tree also retains the wider upstream MeshCore targets and infrastructure from which LoRaGotchi is derived.
 
 ## Building
