@@ -74,8 +74,9 @@ static unsigned long fishLastSave = 0;
 static unsigned long fishReactionUntil = 0;
 static uint8_t fishReaction = 0; // 0 normal, 1 RX, 2 TX/ACK, 3 new contact
 
-static uint8_t loRaFishPage = 0; // 0 aquarium, 1 stats, 2 clock, 3 pairing, 4 DX, 5 options, 6 RF, 7 GNSS, 8 theme, 9 fish color
-static uint8_t loRaFishOption = 0; // timeout, reset, RF, GNSS, theme, fish color
+static uint8_t loRaFishPage = 0; // 0 aquarium, 1 stats, 2 clock, 3 pairing, 4 DX, 5 options, 6 RF, 7 GNSS, 8 theme, 9 fish, 10 schedule
+static uint8_t loRaFishOption = 0; // timeout, reset, RF, GNSS, theme, fish color, time
+static uint8_t loRaFishTimeField = 0;
 static constexpr uint8_t LORAFISH_PAGE_COUNT = 8;
 static int8_t loRaFishRfHistory[48] = {0};
 static uint8_t loRaFishRfHistoryCount = 0;
@@ -162,6 +163,9 @@ static unsigned long loRaFishEvolutionFlashUntil = 0;
 // User-selectable screen timeout. 0=15s, 1=30s, 2=60s, 3=always on.
 static uint8_t loRaFishTimeoutSetting = 0;
 static const uint32_t loRaFishTimeoutValues[] = {15000UL,30000UL,60000UL,0UL};
+static uint8_t loRaFishSleepHour = 21;
+static uint8_t loRaFishWakeHour = 7;
+static int8_t loRaFishUtcOffsetQuarters = 0;
 static uint32_t loRaFishScreenTimeoutMs() {
   return loRaFishTimeoutValues[min((uint8_t)3,loRaFishTimeoutSetting)];
 }
@@ -219,8 +223,6 @@ static void creditLoRaFishMeal(bool animate, int displayWidth) {
   }
 }
 static uint32_t loRaFishNextAutoFeed = LORAFISH_PACKETS_PER_FEED;
-static constexpr uint8_t LORAFISH_SLEEP_HOUR = 21;
-static constexpr uint8_t LORAFISH_WAKE_HOUR = 7;
 
 // Tamagotchi-style tank hygiene.
 static uint8_t loRaFishPoopCount = 0;
@@ -306,38 +308,32 @@ static bool loRaFishMeshTimeValid(uint32_t epoch) {
 static bool loRaFishClock(char* timeBuf, size_t timeLen,
                           char* dateBuf, size_t dateLen) {
   uint32_t epoch = loRaFishRTC ? loRaFishRTC->getCurrentTime() : 0;
+  const bool meshTimeValid=loRaFishMeshTimeValid(epoch);
 
-  if (loRaFishMeshTimeValid(epoch)) {
-#ifdef ESP32
-    time_t raw = (time_t)epoch;
-    struct tm tmv;
-    setenv("TZ", "GMT0BST,M3.5.0/1,M10.5.0/2", 1);
-    tzset();
-    localtime_r(&raw, &tmv);
-    snprintf(timeBuf, timeLen, "%02d:%02d", tmv.tm_hour, tmv.tm_min);
-    static const char* mon[]={"Jan","Feb","Mar","Apr","May","Jun",
-                              "Jul","Aug","Sep","Oct","Nov","Dec"};
-    snprintf(dateBuf, dateLen, "%02d %s %04d",
-             tmv.tm_mday, mon[tmv.tm_mon], tmv.tm_year+1900);
-  #else
-    DateTime dt(epoch);
-    static const char* mon[]={"Jan","Feb","Mar","Apr","May","Jun",
-                  "Jul","Aug","Sep","Oct","Nov","Dec"};
-    snprintf(timeBuf,timeLen,"%02u:%02u",dt.hour(),dt.minute());
-    snprintf(dateBuf,dateLen,"%02u %s %04u",dt.day(),mon[dt.month()-1],dt.year());
-  #endif
-    return true;
+  int64_t baseEpoch;
+  if (meshTimeValid) {
+    baseEpoch=epoch;
+  } else {
+    baseEpoch=(int64_t)DateTime(__DATE__,__TIME__).unixtime()+millis()/1000UL;
   }
+  int64_t localEpoch=baseEpoch+(int32_t)loRaFishUtcOffsetQuarters*900L;
+  if (localEpoch<0) localEpoch=0;
+  DateTime dt((uint32_t)localEpoch);
+  static const char* mon[]={"Jan","Feb","Mar","Apr","May","Jun",
+                            "Jul","Aug","Sep","Oct","Nov","Dec"};
+  snprintf(timeBuf,timeLen,"%02u:%02u",dt.hour(),dt.minute());
+  snprintf(dateBuf,dateLen,"%02u %s %04u",dt.day(),mon[dt.month()-1],dt.year());
+  return meshTimeValid;
+}
 
-  uint32_t sec = buildSecondsOfDay() + millis()/1000UL;
-  uint32_t days = sec / 86400UL;
-  sec %= 86400UL;
-  snprintf(timeBuf, timeLen, "%02lu:%02lu",
-           (unsigned long)(sec/3600UL),
-           (unsigned long)((sec/60UL)%60UL));
-  if (days == 0) snprintf(dateBuf, dateLen, "%s", __DATE__);
-  else snprintf(dateBuf, dateLen, "%s +%lud", __DATE__, (unsigned long)days);
-  return false;
+static void loRaFishFormatUtcOffset(char* text,size_t textLen,bool includeUtc=true) {
+  const int minutes=(int)loRaFishUtcOffsetQuarters*15;
+  const char sign=minutes<0 ? '-' : '+';
+  const int absoluteMinutes=abs(minutes);
+  if (includeUtc)
+    snprintf(text,textLen,"UTC%c%02d:%02d",sign,absoluteMinutes/60,absoluteMinutes%60);
+  else
+    snprintf(text,textLen,"%c%02d:%02d",sign,absoluteMinutes/60,absoluteMinutes%60);
 }
 
 static uint8_t fishEvolutionForAge(uint32_t mins) {
@@ -372,6 +368,9 @@ static void saveLoRaFishSettings() {
     f.write(&loRaFishPoopCount, 1);
     f.write(&loRaFishTheme, 1);
     f.write(&loRaFishColor, 1);
+    f.write(&loRaFishSleepHour, 1);
+    f.write(&loRaFishWakeHour, 1);
+    f.write((const uint8_t*)&loRaFishUtcOffsetQuarters, 1);
     f.close();
   }
 #endif
@@ -395,6 +394,13 @@ static void loadLoRaFishSettings() {
     if (f.read(&theme,1)==1 && theme<loRaFishThemeCount()) loRaFishTheme=theme;
     uint8_t color=0;
     if (f.read(&color,1)==1 && color<LORAFISH_FISH_COLOR_COUNT) loRaFishColor=color;
+    uint8_t sleepHour=0;
+    if (f.read(&sleepHour,1)==1 && sleepHour<24) loRaFishSleepHour=sleepHour;
+    uint8_t wakeHour=0;
+    if (f.read(&wakeHour,1)==1 && wakeHour<24) loRaFishWakeHour=wakeHour;
+    int8_t utcOffset=0;
+    if (f.read((uint8_t*)&utcOffset,1)==1 && utcOffset>=-48 && utcOffset<=56)
+      loRaFishUtcOffsetQuarters=utcOffset;
     f.close();
   }
 #endif
@@ -890,11 +896,11 @@ static void drawLoRaFishMemorial(DisplayDriver& display) {
 
 static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
   const int w=display.width();
-  static const char* labels[]={"Screen timeout","Reset pet","RF monitor","GNSS monitor","Firmware theme","Fish color"};
+  static const char* labels[]={"Screen timeout","Reset pet","RF monitor","GNSS monitor","Firmware theme","Fish color","Schedule & time"};
   const uint8_t first=loRaFishOption>3 ? loRaFishOption-3 : 0;
   drawLoRaFishHeader(display,"OPTIONS","");
   display.setColor(UIColor::primary_txt);
-  for (uint8_t row=0; row<4 && first+row<6; row++) {
+  for (uint8_t row=0; row<4 && first+row<7; row++) {
     const uint8_t option=first+row;
     char line[24];
     snprintf(line,sizeof(line),"%c %s",option==loRaFishOption ? '>' : ' ',labels[option]);
@@ -912,8 +918,10 @@ static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
     display.drawTextCentered(w/2,56,"LONG PRESS to open");
   } else if (loRaFishOption==4) {
     display.drawTextCentered(w/2,56,"LONG PRESS: THEMES");
-  } else {
+  } else if (loRaFishOption==5) {
     display.drawTextCentered(w/2,56,"LONG PRESS: FISH COLOR");
+  } else {
+    display.drawTextCentered(w/2,56,"LONG PRESS: SCHEDULE");
   }
 }
 
@@ -952,6 +960,28 @@ static void drawLoRaFishColorMenu(DisplayDriver& display) {
   display.drawTextCentered(w/2,43,loRaFishColorNames[loRaFishColor % LORAFISH_FISH_COLOR_COUNT]);
   display.setColor(UIColor::secondary_txt);
   display.drawTextCentered(w/2,56,loRaFishColorDisplay ? "CLICK NEXT  LONG BACK" : "FISH COLOR ON TFT");
+}
+
+static void drawLoRaFishTimeMenu(DisplayDriver& display) {
+  const int w=display.width();
+  char timezone[16];
+  char value[20];
+  loRaFishFormatUtcOffset(timezone,sizeof(timezone));
+  drawLoRaFishHeader(display,"SCHEDULE",timezone);
+
+  const char* labels[]={"Sleep","Wake","UTC offset"};
+  const int hours[]={loRaFishSleepHour,loRaFishWakeHour};
+  display.setColor(UIColor::primary_txt);
+  for (uint8_t row=0; row<3; row++) {
+    if (row<2) snprintf(value,sizeof(value),"%02d:00",hours[row]);
+    else loRaFishFormatUtcOffset(value,sizeof(value),false);
+    display.setCursor(3,22+row*11);
+    display.print(row==loRaFishTimeField ? ">" : " ");
+    display.print(row==2 ? "Offset" : labels[row]);
+    display.drawTextRightAlign(w-3,22+row*11,value);
+  }
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2,56,"CLICK:ADJUST 2X:NEXT");
 }
 
 static uint32_t loRaFishDXContactIndex=0;
@@ -1399,7 +1429,10 @@ static bool loRaFishIsSleeping() {
   char tb[8], db[24];
   loRaFishClock(tb,sizeof(tb),db,sizeof(db));
   int hh = atoi(tb);
-  return hh >= LORAFISH_SLEEP_HOUR || hh < LORAFISH_WAKE_HOUR;
+  if (loRaFishSleepHour == loRaFishWakeHour) return false;
+  if (loRaFishSleepHour > loRaFishWakeHour)
+    return hh >= loRaFishSleepHour || hh < loRaFishWakeHour;
+  return hh >= loRaFishSleepHour && hh < loRaFishWakeHour;
 }
 
 static void drawLoRaFishSleeping(DisplayDriver& display, UITask* task) {
@@ -1441,6 +1474,7 @@ static void drawLoRaFish(DisplayDriver& display, UITask* task) {
     case 7: drawLoRaFishGNSS(display,task); break;
     case 8: drawLoRaFishThemeMenu(display); break;
     case 9: drawLoRaFishColorMenu(display); break;
+    case 10: drawLoRaFishTimeMenu(display); break;
     default:
       if (fish.ageMinutes >= LORAFISH_LIFESPAN_MINUTES) drawLoRaFishMemorial(display);
       else if (fish.ageMinutes < LORAFISH_EGG_MINUTES) drawLoRaFishEgg(display);
@@ -1870,7 +1904,7 @@ public:
     // Joystick-style targets may report KEY_ENTER, so accept either.
     if (c == KEY_ENTER || c == KEY_NEXT) {
       if (loRaFishPage == 5) {
-        loRaFishOption = (loRaFishOption + 1) % 6;
+        loRaFishOption = (loRaFishOption + 1) % 7;
       } else if (loRaFishPage == 8) {
         loRaFishTheme = (loRaFishTheme + 1) % loRaFishThemeCount();
         applyLoRaFishTheme();
@@ -1878,6 +1912,14 @@ public:
       } else if (loRaFishPage == 9) {
         loRaFishColor = (loRaFishColor + 1) % LORAFISH_FISH_COLOR_COUNT;
         loragotchiDXLocalColorIndex = loRaFishColor;
+        saveLoRaFishSettings();
+      } else if (loRaFishPage == 10) {
+        if (loRaFishTimeField == 0)
+          loRaFishSleepHour = (loRaFishSleepHour + 1) % 24;
+        else if (loRaFishTimeField == 1)
+          loRaFishWakeHour = (loRaFishWakeHour + 1) % 24;
+        else
+          loRaFishUtcOffsetQuarters = loRaFishUtcOffsetQuarters >= 56 ? -48 : loRaFishUtcOffsetQuarters + 1;
         saveLoRaFishSettings();
       } else if (loRaFishPage == 4 && !loragotchiDXHome.away && !loragotchiDXHome.pending) {
         int n=the_mesh.getNumContacts();
@@ -2478,6 +2520,13 @@ char UITask::handleLongPress(char c) {
     return 0;
   }
 
+  if (loRaFishPage == 10) {
+    loRaFishOption = 6;
+    loRaFishPage = 5;
+    _next_refresh = 0;
+    return 0;
+  }
+
   if (loRaFishPage == 4) {
     ContactInfo c;
     if(!loRaFishDXGetContact(c)) { showAlert("No DX contact",700); return 0; }
@@ -2552,6 +2601,10 @@ char UITask::handleLongPress(char c) {
     } else if (loRaFishOption == 5) {
       loRaFishPage = 9;
       _next_refresh = 0;
+    } else if (loRaFishOption == 6) {
+      loRaFishTimeField = 0;
+      loRaFishPage = 10;
+      _next_refresh = 0;
     }
 
     // Consume the event: don't let MeshCore act on the same long press.
@@ -2589,6 +2642,11 @@ char UITask::handleDoubleClick(char c) {
   if (loRaFishPage == 8 || loRaFishPage == 9) {
     loRaFishOption = loRaFishPage == 8 ? 4 : 5;
     loRaFishPage = 5;
+    _next_refresh = 0;
+    return 0;
+  }
+  if (loRaFishPage == 10) {
+    loRaFishTimeField = (loRaFishTimeField + 1) % 3;
     _next_refresh = 0;
     return 0;
   }
