@@ -8,6 +8,7 @@
 
 class ST7735Display : public DisplayDriver {
   bool _isOn;
+  uint8_t _brightness = 255;
   RefCountedDigitalPin* _peripher_power;
 
   bool i2c_probe(TwoWire& wire, uint8_t addr);
@@ -33,6 +34,7 @@ public:
   bool isOn() override { return _isOn; }
   void turnOn() override;
   void turnOff() override;
+  void setBrightness(uint8_t brightness) override;
   void clear() override;
   void startFrame(ColorVal bkg = UIColor::window_bkg) override;
   void setTextSize(int sz) override;
