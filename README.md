@@ -44,8 +44,8 @@ LoRaFish buzzer outputs are assigned per board:
 | ThinkNode M2 | GPIO5 |
 | Heltec WiFi LoRa 32 V3 | GPIO6 |
 | Heltec WiFi LoRa 32 V4 OLED | GPIO6 |
-| Heltec T114 | GPIO46 (P1.14) |
-| Heltec T096 | P1.13 (GPIO45) |
+| Heltec T114 | GPIO46 / P1.14 |
+| Heltec T096 | GPIO45 / P1.13 |
 
 The T096 target uses its existing BLE companion transport, TFT display, and external GNSS support. After the build, enter the board's UF2 bootloader and copy `.pio/build/Heltec_t096_LoRaFish_companion_ble/firmware.uf2` to its mounted drive. Device-level validation is still needed.
 
