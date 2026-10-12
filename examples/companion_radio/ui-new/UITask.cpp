@@ -323,13 +323,19 @@ static unsigned long loRaFishBootMs = 0;
 #define LORAFISH_TIMEOUT_MS() loRaFishScreenTimeoutMs()
 // Tamagotchi-style automatic feeding and sleep cycle.
 static bool loRaFishFeeding = false;
-static bool loRaFishFeedPipped = false;
+static bool loRaFishFeedChasing = false;
 static unsigned long loRaFishFeedStarted = 0;
 static int loRaFishFeedStartX = 22;
 static int loRaFishFeedStartY = 35;
-static bool loRaFishFeedStartRight = true;
+static int loRaFishFeedLastX = 0;
+static bool loRaFishFeedLastXValid = false;
 static constexpr unsigned long LORAFISH_FEED_DROP_MS = 1300UL;
-static constexpr unsigned long LORAFISH_FEED_DONE_MS = 1750UL;
+static constexpr unsigned long LORAFISH_FEED_NOTICE_MS = 250UL;
+static constexpr unsigned long LORAFISH_FEED_RUSH_MS = 350UL;
+static constexpr unsigned long LORAFISH_FEED_EAT_MS = 150UL;
+static constexpr unsigned long LORAFISH_FEED_RETURN_MS = 300UL;
+static constexpr unsigned long LORAFISH_FEED_DONE_MS =
+  LORAFISH_FEED_DROP_MS + LORAFISH_FEED_EAT_MS + LORAFISH_FEED_RETURN_MS;
 static constexpr uint32_t LORAFISH_PACKETS_PER_FEED = 10;
 
 static void loRaFishNaturalPositionForStage(int w, uint8_t stage, unsigned long phaseOffset,
@@ -359,15 +365,14 @@ static void loRaFishNaturalPosition(int w, int& x, int& y, bool& right) {
 
 // Gameplay and presentation are deliberately separate:
 // a meal is credited immediately when RF earns it; this animation is optional.
-static void creditLoRaFishMeal(bool animate, int displayWidth) {
+static void creditLoRaFishMeal(bool animate) {
   fish.happiness = (fish.happiness <= 97) ? fish.happiness + 3 : 100;
   scheduleLoRaFishPoop();
   saveLoRaFish();
 
   if (animate && !loRaFishFeeding) {
-    loRaFishNaturalPosition(displayWidth, loRaFishFeedStartX, loRaFishFeedStartY, loRaFishFeedStartRight);
     loRaFishFeeding = true;
-    loRaFishFeedPipped = false;
+    loRaFishFeedChasing = false;
     loRaFishFeedStarted = millis();
   }
 }
@@ -417,7 +422,8 @@ static void startLoRaFishFeeding() {
   // Presentation only. Meal state is credited by creditLoRaFishMeal().
   if (!loRaFishFeeding) {
     loRaFishFeeding = true;
-    loRaFishFeedPipped = false;
+    loRaFishFeedChasing = false;
+    loRaFishFeedLastXValid = false;
     loRaFishFeedStarted = millis();
   }
 }
@@ -428,7 +434,8 @@ static void resetLoRaFishPet() {
   fishReaction = 0;
   fishReactionUntil = 0;
   loRaFishFeeding = false;
-  loRaFishFeedPipped = false;
+  loRaFishFeedChasing = false;
+  loRaFishFeedLastXValid = false;
   loRaFishFeedStarted = 0;
   loRaFishEvolutionFlashUntil = 0;
   loRaFishNextAutoFeed = LORAFISH_PACKETS_PER_FEED;
@@ -724,6 +731,8 @@ static void hatchLoRaFishOffspring() {
   loRaFishNextPoopAt=0;
   loRaFishCleaning=false;
   loRaFishFeeding=false;
+  loRaFishFeedChasing=false;
+  loRaFishFeedLastXValid=false;
   loRaFishEvolutionFlashUntil=0;
   loRaFishHatchMelodyPlayed=false;
   loRaFishNextAutoFeed=LORAFISH_PACKETS_PER_FEED;
@@ -1805,29 +1814,58 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
   loRaFishNaturalPosition(w,x,y,right);
 
   if (loRaFishFeeding) {
-    unsigned long elapsed = millis() - loRaFishFeedStarted;
-    const int foodX = w/2 + 18;
-    float p = elapsed / (float)LORAFISH_FEED_DROP_MS;
-    if (p > 1.0f) p = 1.0f;
+    const unsigned long elapsed=millis()-loRaFishFeedStarted;
+    const int foodX=w/2+18;
+    const int targetX=foodX-15;
+    const int targetY=35;
 
-    const int targetX = foodX - 15;
-    x = loRaFishFeedStartX + (int)((targetX - loRaFishFeedStartX) * p);
-    y = loRaFishFeedStartY + (int)((35 - loRaFishFeedStartY) * p)
-        + (int)sinf(millis()/180.0f);
-    right = (targetX >= loRaFishFeedStartX);
-
-    if (elapsed < LORAFISH_FEED_DROP_MS) {
-      int foodY = 18 + (int)((34 - 18) * p);
+    if (elapsed<LORAFISH_FEED_DROP_MS) {
+      const float dropProgress=elapsed/(float)LORAFISH_FEED_DROP_MS;
+      const int foodY=18+(int)(16*dropProgress);
       display.setColor(UIColor::primary_txt);
-      display.fillRect(foodX, foodY, 2, 2);
-    } else if (!loRaFishFeedPipped) {
-      loRaFishFeedPipped = true;
-      // Meal was already credited when the RF threshold was reached.
-      // This is only the visible/audible eating feedback.
-
+      display.fillRect(foodX,foodY,2,2);
     }
 
-    if (elapsed >= LORAFISH_FEED_DONE_MS) loRaFishFeeding = false;
+    if (elapsed>=LORAFISH_FEED_NOTICE_MS && elapsed<LORAFISH_FEED_DONE_MS) {
+      if (!loRaFishFeedChasing) {
+        loRaFishFeedStartX=x;
+        loRaFishFeedStartY=y;
+        loRaFishFeedLastX=x;
+        loRaFishFeedLastXValid=true;
+        loRaFishFeedChasing=true;
+      }
+
+      const bool facingFood=targetX>=loRaFishFeedStartX;
+      if (elapsed<LORAFISH_FEED_NOTICE_MS+LORAFISH_FEED_RUSH_MS) {
+        const float rushProgress=(elapsed-LORAFISH_FEED_NOTICE_MS)/
+            (float)LORAFISH_FEED_RUSH_MS;
+        x=loRaFishFeedStartX+(int)((targetX-loRaFishFeedStartX)*rushProgress);
+        y=loRaFishFeedStartY+(int)((targetY-loRaFishFeedStartY)*rushProgress);
+        right=facingFood;
+      } else if (elapsed<LORAFISH_FEED_DROP_MS+LORAFISH_FEED_EAT_MS) {
+        x=targetX;
+        y=targetY;
+        right=facingFood;
+      } else {
+        const float returnProgress=(elapsed-LORAFISH_FEED_DROP_MS-
+            LORAFISH_FEED_EAT_MS)/(float)LORAFISH_FEED_RETURN_MS;
+        x=targetX+(int)((x-targetX)*returnProgress);
+        y=targetY+(int)((y-targetY)*returnProgress);
+        if (returnProgress<0.5f) right=facingFood;
+      }
+
+      if (loRaFishFeedLastXValid) {
+        if (x>loRaFishFeedLastX) right=true;
+        else if (x<loRaFishFeedLastX) right=false;
+        loRaFishFeedLastX=x;
+      }
+    }
+
+    if (elapsed>=LORAFISH_FEED_DONE_MS) {
+      loRaFishFeeding=false;
+      loRaFishFeedChasing=false;
+      loRaFishFeedLastXValid=false;
+    }
   }
 
  drawLoRaFishHygiene(display);
@@ -2938,7 +2976,7 @@ void UITask::loop() {
     if (!petSleeping) {
       const bool canAnimate = _display && _display->isOn() &&
                               loRaFishPage == 0 && !loRaFishFeeding;
-      creditLoRaFishMeal(canAnimate, _display ? _display->width() : 128);
+      creditLoRaFishMeal(canAnimate);
       // Eating sound is gameplay feedback, independent of OLED state.
       playFeedPip();
     }
