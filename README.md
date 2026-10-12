@@ -47,8 +47,6 @@ LoRaFish buzzer outputs are assigned per board:
 | Heltec T114 | GPIO46 (P1.14) |
 | Heltec T096 | GPIO18 (P0.18) |
 
-The V4 LoRaFish build previously used GPIO6; move an existing buzzer connection from GPIO6 to GPIO19.
-
 The T096 target uses its existing BLE companion transport, TFT display, and external GNSS support. After the build, enter the board's UF2 bootloader and copy `.pio/build/Heltec_t096_LoRaFish_companion_ble/firmware.uf2` to its mounted drive. Device-level validation is still needed.
 
 The project tree also retains the wider upstream MeshCore targets and infrastructure from which LoRaGotchi is derived.
