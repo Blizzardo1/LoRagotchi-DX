@@ -12,6 +12,7 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 2. Start the device and connect to it from the MeshCore app as a BLE companion. Use the PIN shown on the device's pairing screen when the app requests one.
 3. Set the device clock from the app. LoRaGotchi uses MeshCore's clock for the displayed local time and scheduled sleep. If the clock has not been set to a valid date, the UI falls back to build time plus uptime; this fallback is not a substitute for setting the clock.
 4. Use **Options → Schedule & time** to set your local UTC offset and sleep/wake hours.
+5. On a color display, choose the starting Scales, Body/Border, and Eyes colors on the new-fish screen, then long-press to start. Monochrome displays skip this screen and start with monochrome traits.
 
 Pet age, RF-event count, happiness, and other pet state are saved across restarts. Display and schedule settings are also saved. DX travel is temporary: after a reboot, the local fish returns home and any visiting-fish slot is cleared.
 
@@ -47,12 +48,13 @@ Short-click on **Options** moves the selection. Long-press opens the selected it
 
 The main **Options** menu contains:
 
-- **Display**: screen timeout, brightness, firmware theme, and fish color on color displays.
-- **Reset pet**: start a new egg and reset pet progress. Display and schedule preferences are kept.
+- **Display**: screen timeout, brightness, and firmware theme.
+- **Reset pet**: start a new egg and reset pet progress. Color displays then open the starting-trait picker; monochrome displays start with monochrome traits. Display and schedule preferences are kept.
 - **RF monitor**: view recent received signal information and activity.
 - **GNSS monitor**: inspect GNSS status; long-press toggles GNSS where supported.
 - **Schedule & time**: configure sleep, wake, and UTC offset.
-- **Sound**: configure buzzer volume and pet/message sounds. This item appears only on buzzer-equipped LoRaFish builds.
+- **Sound**: configure buzzer volume, wake/sleep cues, and message tone on buzzer-equipped builds.
+- **Breed with visitor**: appears when the local fish and a visiting fish are both Adult or Elder and no offspring egg is already pending.
 
 ### Display submenu
 
@@ -62,7 +64,8 @@ Open **Options → Display**. Short-click selects an item and long-press opens i
 - **Always-On-Dim** selects when an always-on screen dims after inactivity: 15, 30, or 60 seconds. It applies when the active awake/asleep timeout is Always On. A button press restores the selected brightness.
 - **Brightness** cycles through 25%, 50%, 75%, and 100%. The default is 100%. Brightness is controlled by OLED contrast on the V4 and backlight level on color TFT targets.
 - **Firmware theme** cycles the available themes. Color TFTs have Midnight, Paper, Lagoon, and Sunset. Monochrome OLEDs use the dark and paper themes.
-- **Fish color** cycles Coral, Tangerine, Gold, Mint, Lagoon, and Orchid. This option is available only on color displays. A monochrome screen renders fish in its foreground color.
+
+Fish color traits are chosen at first run or after **Reset pet**, not changed mid-generation. On the starting-trait screen, short-click cycles the current trait, double-click switches between Scales, Body/Border, and Eyes, and long-press confirms the starting fish. Color displays offer Coral, Tangerine, Gold, Mint, Lagoon, Orchid, and Mono for each trait. Monochrome displays skip the picker and begin with all three traits set to Mono.
 
 ### Sound menu
 
@@ -89,6 +92,12 @@ A new pet starts as an egg. It hatches after five minutes. The fish then progres
 
 The age clock continues while the display is off and while the fish sleeps. The aquarium animation is only a presentation; turning the display off does not pause the pet.
 
+### Breeding and generations
+
+When an Adult or Elder local fish is hosting an Adult or Elder visitor, **Breed with visitor** appears in Options. Long-press it to produce one egg. For each of the three traits, the offspring randomly inherits that trait from either parent; Mono is inherited like any other trait. The visitor may remain until recalled, but a second egg cannot be produced while one is pending.
+
+The egg is deliberately unmarked so its colors are not revealed. It appears as a small `EGG` indicator in the aquarium footer while the current fish lives. Generation is shown on the Stats screen. When the parent reaches the seven-day Memorial stage, the egg moves beside the gravestone on a random side. After five minutes there, it hatches into the next generation. Only the current generation and pending egg traits are saved; no family tree is retained. **Reset pet** clears a pending egg and restarts generation 1.
+
 ### Mesh activity, meals, and hygiene
 
 MeshCore interactions such as received messages, acknowledgments, and new contacts contribute to the RF-event counter. Each group of ten events earns a meal while the fish is awake. Meals increase happiness and schedule waste to appear 30 to 90 seconds later. Happiness is capped at 100. The buzzer, when fitted and enabled, provides hatch, feeding, and cleaning sounds.
@@ -107,7 +116,7 @@ Open **DX Visit** to choose a compatible LoRaGotchi DX peer from the contact lis
 
 When your fish is away, long-press recalls it home. Double-click on DX Visit opens Options. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
 
-Color-capable displays show visitor color when the visitor supports it. A monochrome visitor appears in cyan on a color display; monochrome displays use their normal foreground color. A fish returning from a monochrome host briefly animates back into its saved home color on a color display.
+Color-capable displays render visitor Scales, Body/Border, and Eyes traits independently. Mono traits use the display's foreground color; monochrome displays render every trait in their foreground color. A fish returning from a monochrome host briefly animates back into its saved home colors on a color display.
 
 ## Display and Hardware Notes
 
