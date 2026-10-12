@@ -79,6 +79,7 @@ static uint8_t loRaFishOption = 0; // display, reset, RF, GNSS, schedule
 static uint8_t loRaFishDisplayOption = 0;
 static uint8_t loRaFishTimeField = 0;
 static uint8_t loRaFishTimeoutField = 0;
+static uint8_t loRaFishSoundField = 0;
 static constexpr uint8_t LORAFISH_PAGE_COUNT = 8;
 static int8_t loRaFishRfHistory[48] = {0};
 static uint8_t loRaFishRfHistoryCount = 0;
@@ -176,6 +177,33 @@ static const char* loRaFishAlwaysOnDimNames[] = {"15s","30s","60s"};
 static unsigned long loRaFishLastActivityMs = 0;
 static bool loRaFishScreenDimmed = false;
 static bool loRaFishBrightnessNeedsApply = false;
+static uint8_t loRaFishBuzzerVolume = 4;
+static uint8_t loRaFishWakeSound = 0;
+static uint8_t loRaFishSleepSound = 0;
+static uint8_t loRaFishMessageSound = 1;
+static bool loRaFishSoundSleepStateKnown = false;
+static bool loRaFishSoundWasSleeping = false;
+static const char* loRaFishVolumeNames[] = {"Off","25%","50%","75%","100%"};
+static const char* loRaFishWakeSoundNames[] = {"Off","Chirp","Rising","Alarm"};
+static const char* loRaFishSleepSoundNames[] = {"Off","Drift","Soft bell"};
+static const char* loRaFishMessageSoundNames[] = {"Off","Ping","Double","Arpeggio"};
+static const char* loRaFishWakeMelodies[] = {
+  "",
+  "WakeChirp:d=16,o=6,b=165:c,e,g",
+  "WakeRise:d=16,o=6,b=180:g,b,d7,g7",
+  "WakeAlarm:d=8,o=6,b=140:d7,a6,d7,a6",
+};
+static const char* loRaFishSleepMelodies[] = {
+  "",
+  "SleepDrift:d=8,o=5,b=100:g,e,c4",
+  "SleepBell:d=16,o=5,b=110:e,g,c6",
+};
+static const char* loRaFishMessageMelodies[] = {
+  "",
+  "MessagePing:d=16,o=6,b=170:e6",
+  "MessageDouble:d=16,o=6,b=170:e6,g6",
+  "MessageArpeggio:d=16,o=6,b=165:c6,e6,g6",
+};
 static uint8_t loRaFishSleepHour = 21;
 static uint8_t loRaFishWakeHour = 7;
 static int8_t loRaFishUtcOffsetQuarters = 0;
@@ -188,6 +216,13 @@ static uint32_t loRaFishScreenTimeoutMs() {
 }
 static uint8_t loRaFishDisplayOptionCount() {
   return loRaFishColorDisplay ? 4 : 3;
+}
+static uint8_t loRaFishOptionCount() {
+#ifdef PIN_BUZZER
+  return 6;
+#else
+  return 5;
+#endif
 }
 static void applyLoRaFishBrightness(DisplayDriver& display, bool dimmed=false) {
   uint8_t brightness=loRaFishBrightnessValues[min((uint8_t)3,loRaFishBrightnessSetting)];
@@ -404,6 +439,10 @@ static void saveLoRaFishSettings() {
     f.write(&loRaFishTimeoutAsleepSetting, 1);
     f.write(&loRaFishBrightnessSetting, 1);
     f.write(&loRaFishAlwaysOnDimSetting, 1);
+    f.write(&loRaFishBuzzerVolume, 1);
+    f.write(&loRaFishWakeSound, 1);
+    f.write(&loRaFishSleepSound, 1);
+    f.write(&loRaFishMessageSound, 1);
     f.close();
   }
 #endif
@@ -446,6 +485,14 @@ static void loadLoRaFishSettings() {
     if (f.read(&brightness,1)==1 && brightness<4) loRaFishBrightnessSetting=brightness;
     uint8_t dimSetting=0;
     if (f.read(&dimSetting,1)==1 && dimSetting<3) loRaFishAlwaysOnDimSetting=dimSetting;
+    uint8_t volume=0;
+    if (f.read(&volume,1)==1 && volume<5) loRaFishBuzzerVolume=volume;
+    uint8_t wakeSound=0;
+    if (f.read(&wakeSound,1)==1 && wakeSound<4) loRaFishWakeSound=wakeSound;
+    uint8_t sleepSound=0;
+    if (f.read(&sleepSound,1)==1 && sleepSound<3) loRaFishSleepSound=sleepSound;
+    uint8_t messageSound=0;
+    if (f.read(&messageSound,1)==1 && messageSound<4) loRaFishMessageSound=messageSound;
     f.close();
   }
 #endif
@@ -941,11 +988,16 @@ static void drawLoRaFishMemorial(DisplayDriver& display) {
 
 static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
   const int w=display.width();
+#ifdef PIN_BUZZER
+  static const char* labels[]={"Display","Reset pet","RF monitor","GNSS monitor","Schedule & time","Sound"};
+#else
   static const char* labels[]={"Display","Reset pet","RF monitor","GNSS monitor","Schedule & time"};
+#endif
+  const uint8_t count=loRaFishOptionCount();
   const uint8_t first=loRaFishOption>3 ? loRaFishOption-3 : 0;
   drawLoRaFishHeader(display,"OPTIONS","");
   display.setColor(UIColor::primary_txt);
-  for (uint8_t row=0; row<4 && first+row<5; row++) {
+  for (uint8_t row=0; row<4 && first+row<count; row++) {
     const uint8_t option=first+row;
     char line[24];
     snprintf(line,sizeof(line),"%c %s",option==loRaFishOption ? '>' : ' ',labels[option]);
@@ -960,8 +1012,10 @@ static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
     display.drawTextCentered(w/2,56,"LONG PRESS to reset");
   } else if (loRaFishOption==2 || loRaFishOption==3) {
     display.drawTextCentered(w/2,56,"LONG PRESS to open");
-  } else {
+  } else if (loRaFishOption==4) {
     display.drawTextCentered(w/2,56,"LONG PRESS: SCHEDULE");
+  } else {
+    display.drawTextCentered(w/2,56,"LONG PRESS: SOUNDS");
   }
 }
 
@@ -1067,6 +1121,29 @@ static void drawLoRaFishBrightnessMenu(DisplayDriver& display) {
   display.setColor(UIColor::secondary_txt);
   display.drawTextCentered(w/2,57,"CLICK: NEXT LONG: BACK");
 }
+
+#ifdef PIN_BUZZER
+static void drawLoRaFishSoundMenu(DisplayDriver& display) {
+  const int w=display.width();
+  static const char* labels[]={"Volume","Wake alarm","Sleep cue","Message tone"};
+  const char* values[]={
+    loRaFishVolumeNames[min((uint8_t)4,loRaFishBuzzerVolume)],
+    loRaFishWakeSoundNames[min((uint8_t)3,loRaFishWakeSound)],
+    loRaFishSleepSoundNames[min((uint8_t)2,loRaFishSleepSound)],
+    loRaFishMessageSoundNames[min((uint8_t)3,loRaFishMessageSound)],
+  };
+  drawLoRaFishHeader(display,"SOUND","");
+  display.setColor(UIColor::primary_txt);
+  for (uint8_t row=0; row<4; row++) {
+    display.setCursor(3,18+row*10);
+    display.print(row==loRaFishSoundField ? "> " : "  ");
+    display.print(labels[row]);
+    display.drawTextRightAlign(w-3,18+row*10,values[row]);
+  }
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2,58,"CLICK: PREVIEW  2X: NEXT");
+}
+#endif
 
 static uint32_t loRaFishDXContactIndex=0;
 static uint32_t loRaFishDXRequestStarted=0;
@@ -1559,6 +1636,9 @@ static void drawLoRaFish(DisplayDriver& display, UITask* task) {
     case 11: drawLoRaFishTimeoutMenu(display); break;
     case 12: drawLoRaFishDisplayMenu(display); break;
     case 13: drawLoRaFishBrightnessMenu(display); break;
+  #ifdef PIN_BUZZER
+    case 14: drawLoRaFishSoundMenu(display); break;
+  #endif
     default:
       if (fish.ageMinutes >= LORAFISH_LIFESPAN_MINUTES) drawLoRaFishMemorial(display);
       else if (fish.ageMinutes < LORAFISH_EGG_MINUTES) drawLoRaFishEgg(display);
@@ -1991,7 +2071,7 @@ public:
     // Joystick-style targets may report KEY_ENTER, so accept either.
     if (c == KEY_ENTER || c == KEY_NEXT) {
       if (loRaFishPage == 5) {
-        loRaFishOption = (loRaFishOption + 1) % 5;
+        loRaFishOption = (loRaFishOption + 1) % loRaFishOptionCount();
       } else if (loRaFishPage == 12) {
         loRaFishDisplayOption = (loRaFishDisplayOption + 1) % loRaFishDisplayOptionCount();
       } else if (loRaFishPage == 8) {
@@ -2019,6 +2099,10 @@ public:
         loRaFishBrightnessSetting=(loRaFishBrightnessSetting+1)%4;
         loRaFishBrightnessNeedsApply=true;
         saveLoRaFishSettings();
+#ifdef PIN_BUZZER
+      } else if (loRaFishPage == 14) {
+        _task->cycleLoRaFishSoundSetting(loRaFishSoundField);
+#endif
       } else if (loRaFishPage == 4 && !loragotchiDXHome.away && !loragotchiDXHome.pending) {
         int n=the_mesh.getNumContacts();
         if(n>0) loRaFishDXContactIndex=(loRaFishDXContactIndex+1)%n;
@@ -2198,7 +2282,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #ifdef PIN_BUZZER
   buzzer.begin();
   buzzer.quiet(_node_prefs->buzzer_quiet);
+#ifndef LORAFISH_UI
   buzzer.startup();
+#endif
 #endif
 
 #ifdef PIN_VIBRATION
@@ -2211,6 +2297,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   loadLoRaFish();
   loadLoRaFishSettings();
   applyLoRaFishTheme();
+#ifdef PIN_BUZZER
+  buzzer.setVolume(loRaFishBuzzerVolume);
+  buzzer.startup();
+#endif
   if (display) {
     applyLoRaFishBrightness(*display);
     loRaFishRegisterDisplayActivity(*display);
@@ -2230,6 +2320,30 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 void UITask::showAlert(const char* text, int duration_millis) {
   strcpy(_alert, text);
   _alert_expiry = millis() + duration_millis;
+}
+
+void UITask::cycleLoRaFishSoundSetting(uint8_t field) {
+#if defined(LORAFISH_UI) && defined(PIN_BUZZER)
+  const char* preview="";
+  if (field==0) {
+    loRaFishBuzzerVolume=(loRaFishBuzzerVolume+1)%5;
+    buzzer.setVolume(loRaFishBuzzerVolume);
+    if (loRaFishBuzzerVolume>0) preview="SoundTest:d=16,o=6,b=165:c6,g6";
+  } else if (field==1) {
+    loRaFishWakeSound=(loRaFishWakeSound+1)%4;
+    preview=loRaFishWakeMelodies[loRaFishWakeSound];
+  } else if (field==2) {
+    loRaFishSleepSound=(loRaFishSleepSound+1)%3;
+    preview=loRaFishSleepMelodies[loRaFishSleepSound];
+  } else if (field==3) {
+    loRaFishMessageSound=(loRaFishMessageSound+1)%4;
+    preview=loRaFishMessageMelodies[loRaFishMessageSound];
+  }
+  if (preview[0]) buzzer.play(preview);
+  saveLoRaFishSettings();
+#else
+  (void)field;
+#endif
 }
 
 void UITask::notify(UIEventType t) {
@@ -2253,6 +2367,21 @@ void UITask::notify(UIEventType t) {
 #endif
 
 #if defined(PIN_BUZZER)
+#ifdef LORAFISH_UI
+switch(t) {
+  case UIEventType::contactMessage:
+  case UIEventType::channelMessage:
+  case UIEventType::roomMessage:
+    if (loRaFishMessageSound)
+      buzzer.play(loRaFishMessageMelodies[min((uint8_t)3,loRaFishMessageSound)]);
+    break;
+  case UIEventType::ack:
+    buzzer.play("Ack:d=32,o=8,b=120:c");
+    break;
+  default:
+    break;
+}
+#else
 switch(t){
   case UIEventType::contactMessage:
     // gemini's pick
@@ -2270,6 +2399,7 @@ switch(t){
   default:
     break;
 }
+#endif
 #endif
 
 #ifdef PIN_VIBRATION
@@ -2407,6 +2537,20 @@ void UITask::loop() {
 
   if (tickLoRaFishPoop()) {
     playCleanMelody();
+  }
+
+  const bool sleepingNow=loRaFishIsSleeping();
+  if (!loRaFishSoundSleepStateKnown) {
+    loRaFishSoundWasSleeping=sleepingNow;
+    loRaFishSoundSleepStateKnown=true;
+  } else if (sleepingNow!=loRaFishSoundWasSleeping) {
+    loRaFishSoundWasSleeping=sleepingNow;
+#ifdef PIN_BUZZER
+    if (sleepingNow && loRaFishSleepSound)
+      buzzer.play(loRaFishSleepMelodies[min((uint8_t)2,loRaFishSleepSound)]);
+    else if (!sleepingNow && loRaFishWakeSound)
+      buzzer.play(loRaFishWakeMelodies[min((uint8_t)3,loRaFishWakeSound)]);
+#endif
   }
 
   if (fish.ageMinutes >= LORAFISH_EGG_MINUTES &&
@@ -2668,6 +2812,15 @@ char UITask::handleLongPress(char c) {
     return 0;
   }
 
+#ifdef PIN_BUZZER
+  if (loRaFishPage == 14) {
+    loRaFishOption = 5;
+    loRaFishPage = 5;
+    _next_refresh = 0;
+    return 0;
+  }
+#endif
+
   if (loRaFishPage == 12) {
     if (loRaFishDisplayOption==0) {
       loRaFishTimeoutField=0;
@@ -2755,6 +2908,12 @@ char UITask::handleLongPress(char c) {
       loRaFishTimeField = 0;
       loRaFishPage = 10;
       _next_refresh = 0;
+#ifdef PIN_BUZZER
+    } else if (loRaFishOption == 5) {
+      loRaFishSoundField = 0;
+      loRaFishPage = 14;
+      _next_refresh = 0;
+#endif
     }
 
     // Consume the event: don't let MeshCore act on the same long press.
@@ -2812,6 +2971,13 @@ char UITask::handleDoubleClick(char c) {
     _next_refresh=0;
     return 0;
   }
+#ifdef PIN_BUZZER
+  if (loRaFishPage == 14) {
+    loRaFishSoundField = (loRaFishSoundField + 1) % 4;
+    _next_refresh = 0;
+    return 0;
+  }
+#endif
 #endif
   checkDisplayOn(c);
   return c;
