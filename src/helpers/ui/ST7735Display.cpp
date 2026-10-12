@@ -536,8 +536,8 @@ void ST7735Display::turnOff() {
     sendCommand(ST77XX_DISPOFF);
 
     //digitalWrite(PIN_TFT_RST, LOW);
-    // Now turn off the backlight
-    digitalWrite(PIN_TFT_LEDA_CTL, !PIN_TFT_LEDA_CTL_ACTIVE);
+    const uint8_t backlightOff=PIN_TFT_LEDA_CTL_ACTIVE==LOW ? 255 : 0;
+    analogWrite(PIN_TFT_LEDA_CTL,backlightOff);
     _isOn = false;
 
     if (_peripher_power) _peripher_power->release();
