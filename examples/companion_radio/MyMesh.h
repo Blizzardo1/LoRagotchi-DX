@@ -23,6 +23,7 @@ struct LoRaGotchiDXGuestState {
   uint8_t color=0;
   uint8_t scalesColor=0;
   uint8_t eyesColor=0;
+  uint16_t monoPixelTint=0xFFFF;
   bool colorCapable=false;
   char guestName[24]="DX Fish";
   char homeName[32]="";

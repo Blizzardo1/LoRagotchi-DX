@@ -48,7 +48,7 @@ Short-click on **Options** moves the selection. Long-press opens the selected it
 
 The main **Options** menu contains:
 
-- **Display**: screen timeout, brightness, and firmware theme.
+- **Display**: screen timeout, brightness, firmware theme, and aquarium rendering speed. Color displays also offer fish color settings.
 - **Reset pet**: start a new egg and reset pet progress. Color displays then open the starting-trait picker; monochrome displays start with monochrome traits. Display and schedule preferences are kept.
 - **RF monitor**: view recent received signal information and activity.
 - **GNSS monitor**: inspect GNSS status; long-press toggles GNSS where supported.
@@ -64,6 +64,7 @@ Open **Options → Display**. Short-click selects an item and long-press opens i
 - **Always-On-Dim** selects when an always-on screen dims after inactivity: 15, 30, or 60 seconds. It applies when the active awake/asleep timeout is Always On. A button press restores the selected brightness.
 - **Brightness** cycles through 25%, 50%, 75%, and 100%. The default is 100%. Brightness is controlled by OLED contrast on the V4 and backlight level on color TFT targets.
 - **Firmware theme** cycles the available themes. Color TFTs have Midnight, Paper, Lagoon, and Sunset. Monochrome OLEDs use the dark and paper themes.
+- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; other screens keep their existing refresh rates. The selection is saved across restarts. Short-click changes the mode; long-press returns to Display.
 
 Fish color traits are chosen at first run or after **Reset pet**, not changed mid-generation. On the starting-trait screen, short-click cycles the current trait, double-click switches between Scales, Body/Border, and Eyes, and long-press confirms the starting fish. Color displays offer Coral, Tangerine, Gold, Mint, Lagoon, Orchid, and Mono for each trait. Monochrome displays skip the picker and begin with all three traits set to Mono.
 

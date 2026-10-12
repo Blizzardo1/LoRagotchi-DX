@@ -3,6 +3,14 @@
 #include <Preferences.h>
 #endif
 
+#ifndef LORAFISH_MONO_PIXEL_TINT_RGB565
+#if defined(HELTEC_LORA_V4_OLED)
+#define LORAFISH_MONO_PIXEL_TINT_RGB565 0x03B0
+#else
+#define LORAFISH_MONO_PIXEL_TINT_RGB565 0xFFFF
+#endif
+#endif
+
 #ifdef LORAFISH_UI
 LoRaGotchiDXHomeState loragotchiDXHome;
 LoRaGotchiDXGuestState loragotchiDXGuest;
@@ -548,11 +556,12 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     } else if (strncmp(text,"LFG1|ACK|",9)==0 &&
         sscanf(text+9,"%lu|%lu",&tx,&fid)==2 &&
         loragotchiDXHome.pending && tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
-      char msg[96]; snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu|%c|%u|%u|%u",tx,fid,
+      char msg[96]; snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu|%c|%u|%u|%u|%u",tx,fid,
         loragotchiDXLocalHasColorGenes ? 'C' : 'M',
         (unsigned)loragotchiDXLocalColorIndex,
         (unsigned)loragotchiDXLocalScalesColorIndex,
-        (unsigned)loragotchiDXLocalEyesColorIndex);
+        (unsigned)loragotchiDXLocalEyesColorIndex,
+        (unsigned)LORAFISH_MONO_PIXEL_TINT_RGB565);
       uint32_t ack=0,to=0;
       int r=sendMessage(from,getRTCClock()->getCurrentTime(),0,msg,ack,to);
       if(r>=0) {
@@ -579,13 +588,14 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
            sscanf(text+12,"%lu|%lu",&tx,&fid)==2) {
       if((loragotchiDXGuest.reserved || loragotchiDXGuest.present) &&
          tx==loragotchiDXGuest.txid && fid==loragotchiDXGuest.fishid) {
-      char colorMode='M'; unsigned bodyColor=0,scalesColor=0,eyesColor=0;
-      const int fields=sscanf(text+12,"%lu|%lu|%c|%u|%u|%u",
-              &tx,&fid,&colorMode,&bodyColor,&scalesColor,&eyesColor);
+            char colorMode='M'; unsigned bodyColor=0,scalesColor=0,eyesColor=0,monoPixelTint=0xFFFF;
+            const int fields=sscanf(text+12,"%lu|%lu|%c|%u|%u|%u|%u",
+              &tx,&fid,&colorMode,&bodyColor,&scalesColor,&eyesColor,&monoPixelTint);
       loragotchiDXGuest.colorCapable=(fields>=4 && colorMode=='C');
       loragotchiDXGuest.color=(fields>=4 && bodyColor<=6) ? (uint8_t)bodyColor : 6;
       loragotchiDXGuest.scalesColor=(fields>=5 && scalesColor<=6) ? (uint8_t)scalesColor : loragotchiDXGuest.color;
       loragotchiDXGuest.eyesColor=(fields>=6 && eyesColor<=6) ? (uint8_t)eyesColor : loragotchiDXGuest.color;
+            loragotchiDXGuest.monoPixelTint=(fields>=7 && monoPixelTint<=0xFFFF) ? (uint16_t)monoPixelTint : 0xFFFF;
         const bool firstArrival = !loragotchiDXGuest.present;
         loragotchiDXGuest.reserved=false;
         loragotchiDXGuest.present=true;

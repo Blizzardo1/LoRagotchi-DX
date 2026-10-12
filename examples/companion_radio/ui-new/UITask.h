@@ -35,7 +35,7 @@ class UITask : public AbstractUITask {
   NodePrefs* _node_prefs;
   char _alert[80];
   unsigned long _alert_expiry;
-  int _msgcount;
+  int _msgcount = 0;
   unsigned long ui_started_at, next_batt_chck;
   int next_backlight_btn_check = 0;
 #ifdef PIN_STATUS_LED

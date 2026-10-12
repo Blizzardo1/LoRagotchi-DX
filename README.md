@@ -15,48 +15,39 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 - DX session state is cleared on reboot as a recovery mechanism
 - LoRaGotchi / M0YNW boot branding
 - MeshCore remains the underlying radio/mesh transport
+- Buzzer support
+- Colour screen support
 
 ## Supported LoRaGotchi targets in this tree
 
-### ThinkNode M2
-
-PlatformIO environment:
+### ESP32 nodes
 
 ```bash
 pio run -e ThinkNode_M2_LoRaFish_companion_ble
-```
-
-### Heltec WiFi LoRa 32 V3
-
-PlatformIO environment:
-
-```bash
 pio run -e Heltec_v3_LoRaFish_companion_ble
-```
-
-### Heltec T114 (nRF52840, color TFT)
-
-PlatformIO environment:
-
-```bash
-pio run -e Heltec_t114_LoRaFish_companion_ble -t create_uf2
-```
-
-### Heltec WiFi LoRa 32 V4 (OLED)
-
-PlatformIO environment:
-
-```bash
 pio run -e heltec_v4_LoRaFish_companion_ble
 ```
 
-### Heltec T096 (nRF52840, color TFT)
-
-PlatformIO environment:
+### nRF52
 
 ```bash
+pio run -e Heltec_t114_LoRaFish_companion_ble -t create_uf2
 pio run -e Heltec_t096_LoRaFish_companion_ble -t create_uf2
 ```
+
+### Buzzer pins
+
+LoRaFish buzzer outputs are assigned per board:
+
+| Device | Buzzer pin |
+| --- | --- |
+| ThinkNode M2 | GPIO5 |
+| Heltec WiFi LoRa 32 V3 | GPIO19 |
+| Heltec WiFi LoRa 32 V4 OLED | GPIO19 |
+| Heltec T114 | GPIO46 (P1.14) |
+| Heltec T096 | GPIO18 (P0.18) |
+
+The V4 LoRaFish build previously used GPIO6; move an existing buzzer connection from GPIO6 to GPIO19.
 
 The T096 target uses its existing BLE companion transport, TFT display, and external GNSS support. After the build, enter the board's UF2 bootloader and copy `.pio/build/Heltec_t096_LoRaFish_companion_ble/firmware.uf2` to its mounted drive. Device-level validation is still needed.
 
