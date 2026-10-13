@@ -8,7 +8,7 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 
 ## First Use
 
-1. Flash the LoRaGotchi DX build for your board. The Heltec T096 and T114 builds produce a UF2 file; see its README instructions. Other target build commands are listed there.
+1. Flash the LoRaGotchi DX build for your board. The NRF52 builds produce a UF2 file; see its README instructions. Other target build commands are listed there.
 2. Start the device and connect to it from the MeshCore app as a BLE companion. Use the PIN shown on the device's pairing screen when the app requests one.
 3. Set the device clock from the app. LoRaGotchi uses MeshCore's clock for the displayed local time and scheduled sleep. If the clock has not been set to a valid date, the UI falls back to build time plus uptime; this fallback is not a substitute for setting the clock.
 4. Use **Options → Schedule & time** to set your local UTC offset and sleep/wake hours.
@@ -18,7 +18,7 @@ Pet age, RF-event count, happiness, and other pet state are saved across restart
 
 ## Button Controls
 
-The T096 and T114 use a single user button. Hold it for about one second for a long-press. A click, double-click, long-press, and triple-click have different meanings depending on the screen.
+Most nodes use a single user button. Hold it for about one second for a long-press. A click, double-click, long-press, and triple-click have different meanings depending on the screen.
 
 | Gesture | General action |
 | --- | --- |
@@ -29,7 +29,7 @@ The T096 and T114 use a single user button. Hold it for about one second for a l
 
 During the first eight seconds after startup, long-press is reserved for MeshCore's CLI rescue gesture. After that, the LoRaGotchi menu actions are available.
 
-When the display has turned off, the first click wakes it and does not also advance the screen. On the aquarium, long-press starts cleaning if waste is present. It does not open Options from the aquarium.
+When the display has turned off, the first click wakes the screen. On the aquarium, long-press starts cleaning if 💩 is present.
 
 The main screens advance in this order:
 
@@ -97,7 +97,7 @@ The age clock continues while the display is off and while the fish sleeps. The 
 
 When an Adult or Elder local fish is hosting an Adult or Elder visitor, **Breed with visitor** appears in Options. Long-press it to produce one egg. For each of the three traits, the offspring randomly inherits that trait from either parent; Mono is inherited like any other trait. The visitor may remain until recalled, but a second egg cannot be produced while one is pending.
 
-The egg is deliberately unmarked so its colors are not revealed. It appears as a small `EGG` indicator in the aquarium footer while the current fish lives. Generation is shown on the Stats screen. When the parent reaches the seven-day Memorial stage, the egg moves beside the gravestone on a random side. After five minutes there, it hatches into the next generation. Only the current generation and pending egg traits are saved; no family tree is retained. **Reset pet** clears a pending egg and restarts generation 1.
+The egg is deliberately unmarked so its colors are not revealed. It appears as a small 🥚 indicator in the aquarium footer while the current fish lives. Generation is shown on the Stats screen. When the parent reaches the seven-day Memorial stage, the egg moves beside the gravestone on a random side. After five minutes there, it hatches into the next generation. Only the current generation and pending egg traits are saved; no family tree is retained. **Reset pet** clears a pending egg and restarts generation 1.
 
 ### Mesh activity, meals, and hygiene
 
