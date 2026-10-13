@@ -8,6 +8,7 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 
 ## First Use
 
+0. Bringing a device already flashed with a MeshCore firmware is perfectly fine ☑️. don't erase when flashing to keep your settings, channels & ID
 1. Flash the LoRaGotchi DX build for your board. The NRF52 builds produce a UF2 file; see its README instructions. Other target build commands are listed there.
 2. Start the device and connect to it from the MeshCore app as a BLE companion. Use the PIN shown on the device's pairing screen when the app requests one.
 3. Set the device clock from the app. LoRaGotchi uses MeshCore's clock for the displayed local time and scheduled sleep. If the clock has not been set to a valid date, the UI falls back to build time plus uptime; this fallback is not a substitute for setting the clock.
