@@ -1448,16 +1448,34 @@ void MyMesh::handleCmdFrame(size_t len) {
     uint8_t reply[5];
     reply[0] = RESP_CODE_CURR_TIME;
     uint32_t now = getRTCClock()->getCurrentTime();
+    Serial.printf("[RTC DEBUG] GET current=%lu\n", (unsigned long)now);
     memcpy(&reply[1], &now, 4);
     _serial->writeFrame(reply, 5);
   } else if (cmd_frame[0] == CMD_SET_DEVICE_TIME && len >= 5) {
     uint32_t secs;
     memcpy(&secs, &cmd_frame[1], 4);
     uint32_t curr = getRTCClock()->getCurrentTime();
-    if (secs >= curr) {
+    // Recover from an uninitialised or wildly future-dated board RTC.
+    // A normal backward adjustment is still rejected.
+    const bool incomingPlausible = secs >= 1704067200UL && secs <= 4102444800UL;
+    const bool rtcInvalid = curr < 1704067200UL || curr > 4102444800UL;
+    const bool rtcFarAhead = curr > secs && (curr - secs) > 86400UL;
+    const bool accept = incomingPlausible && (secs >= curr || rtcInvalid || rtcFarAhead);
+    Serial.printf("[RTC DEBUG] SET incoming=%lu current=%lu accepted=%d recovery=%d\n",
+                  (unsigned long)secs, (unsigned long)curr, (int)accept,
+                  (int)(rtcInvalid || rtcFarAhead));
+    if (accept) {
       getRTCClock()->setCurrentTime(secs);
-      writeOKFrame();
+      const uint32_t after = getRTCClock()->getCurrentTime();
+      Serial.printf("[RTC DEBUG] AFTER SET=%lu\n", (unsigned long)after);
+      if (after >= secs - 2UL && after <= secs + 2UL) {
+        writeOKFrame();
+      } else {
+        Serial.println("[RTC DEBUG] SET failed: RTC did not retain timestamp");
+        writeErrFrame(ERR_CODE_BAD_STATE);
+      }
     } else {
+      Serial.println("[RTC DEBUG] SET rejected: invalid input or normal backward adjustment");
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }
   } else if (cmd_frame[0] == CMD_SEND_SELF_ADVERT) {

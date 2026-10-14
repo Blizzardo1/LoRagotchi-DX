@@ -1164,8 +1164,75 @@ static void drawElderFishSprite(DisplayDriver& d, int x, int y, bool right,
   }
 }
 
+// Cardputer-only lightweight 2.5D effects. Other boards compile none of this.
+#if defined(LORAFISH_CARDPUTER_25D)
+static void drawCardputerFishDepth(DisplayDriver& d,int x,int y,bool right,uint8_t stage,
+                                  const LoRaFishAppearance& appearance) {
+  const int radius = stage==0 ? 5 : stage==1 ? 7 : stage==3 ? 11 : 9;
+  const ColorVal base=loRaFishColorValue(appearance.body);
+  // A soft dark silhouette under the original sprite, preserving its distinctive details.
+  d.setColor(0x0125);
+  for(int yy=-radius/2;yy<=radius/2;yy++) {
+    const int inset=abs(yy)/2;
+    d.fillRect(x-radius+inset+1,y+yy+2,(radius-inset)*2,1);
+  }
+  // Light-catching upper contour and animated fin glint.
+  d.setColor(0xCFFF);
+  d.fillRect(x-radius/2,y-radius/2-1,radius,1);
+  d.setColor(base);
+  const int sway=(millis()/220UL)%3;
+  d.fillRect(x+(right ? -radius-5 : radius+3),y-2+sway,2,3);
+}
+
+static void drawCardputerTankDepth(DisplayDriver& d) {
+  const int w=d.width(),h=d.height();
+  // Horizontal bands are deliberately cheap on the ESP32-S3's display driver.
+  static const ColorVal water[]={0x010B,0x012D,0x014F,0x0170,0x0190,0x01B0,0x01D0,0x01EF};
+  const int top=17,bottom=h-17,span=bottom-top;
+  for(int i=0;i<8;i++) {
+    int y0=top+(span*i)/8, y1=top+(span*(i+1))/8;
+    d.setColor(water[i]); d.fillRect(0,y0,w,y1-y0);
+  }
+  // Surface shafts of light, offset in successive bands for depth.
+  d.setColor(0x2B75);
+  for(int i=0;i<5;i++) {
+    int x=18+i*48;
+    fishLine(d,x,18,x-13,39);
+    fishLine(d,x+3,18,x-10,39);
+  }
+  // Far-off reef silhouettes.
+  d.setColor(0x0147);
+  for(int i=0;i<7;i++) {
+    int x=i*43-12, y=h-31+(i%3)*3;
+    d.fillRect(x,y,30,h-18-y);
+    d.fillRect(x+8,y-5,12,6);
+  }
+  // Perspective sand layers and glints.
+  d.setColor(0x6328); d.fillRect(0,h-23,w,6);
+  d.setColor(0x9C4B); d.fillRect(0,h-18,w,3);
+  d.setColor(0xDDAF); d.fillRect(0,h-15,w,1);
+  // Parallax seaweed: stems sway gently with millis(), no buffers/allocations.
+  for(int i=0;i<7;i++) {
+    int x=8+i*37, base=h-24, tall=13+(i%3)*5;
+    int sway=(int)((millis()/480UL+i*3)%5)-2;
+    d.setColor((i%2)?0x03C8:0x05A8);
+    fishLine(d,x,base,x+sway,base-tall);
+    fishLine(d,x+2,base,x+5-sway,base-tall+5);
+  }
+  // Tiny rising particles add depth without expensive alpha blending.
+  d.setColor(0x6DBB);
+  for(int i=0;i<8;i++) {
+    int x=9+i*29, y=20+((i*17+millis()/190UL)%(unsigned)(span>1?span:1));
+    d.fillRect(x,y,1,1);
+  }
+}
+#endif
+
 static void drawFishSpriteForStage(DisplayDriver& d,int x,int y,bool right,uint8_t stage,
                                   const LoRaFishAppearance& appearance) {
+#if defined(LORAFISH_CARDPUTER_25D)
+  drawCardputerFishDepth(d,x,y,right,stage,appearance);
+#endif
   switch(stage) {
     case 0: drawFryFishSprite(d,x,y,right,appearance); break;
     case 1: drawYoungFishSprite(d,x,y,right,appearance); break;
@@ -1798,6 +1865,9 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
   const int w=display.width(), h=display.height();
   char tb[8], db[24];
   loRaFishClock(tb,sizeof(tb),db,sizeof(db));
+#if defined(LORAFISH_CARDPUTER_25D)
+  drawCardputerTankDepth(display);
+#endif
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
 
   display.setColor(UIColor::secondary_txt);
@@ -2242,7 +2312,15 @@ public:
     drawLoRaFish(display, _task);
     // Static pages (menus, stats, pairing) only need an occasional redraw; button
     // presses reset _next_refresh in checkDisplayOn(), so they stay responsive.
-    if (loRaFishPage == 0) return loRaFishSimulationMode ? 250 : 100;
+    if (loRaFishPage == 0) {
+#if defined(LORAFISH_CARDPUTER_25D)
+      // Cardputer LCD uses a framebuffer; 100 ms = only 10 FPS and makes
+      // the pixel-stepped fish appear jerky. Target ~30 FPS on this board only.
+      return loRaFishSimulationMode ? 100 : 33;
+#else
+      return loRaFishSimulationMode ? 250 : 100;
+#endif
+    }
     if (loRaFishPage == 2 || loRaFishPage == 4 || loRaFishPage == 6) return 1000;  // clock, DX, RF
     return 2000;                                     // static pages
 #else
@@ -3009,6 +3087,36 @@ void UITask::loop() {
   }
 #endif
   char c = 0;
+#if defined(M5STACK_CARDPUTER) && defined(LORAFISH_UI)
+  // Dedicated Cardputer keyboard path. Fn + ; / . / , / / are the hardware arrows.
+  // W/A/S/D also work without holding Fn.
+  M5Cardputer.update();
+  if (M5Cardputer.Keyboard.isChange()) {
+    const auto& keys = M5Cardputer.Keyboard.keysState();
+    bool up=keys.up, down=keys.down, left=keys.left, right=keys.right;
+    for (char k : keys.word) {
+      if (k=='w' || k=='W') up=true;
+      if (k=='s' || k=='S') down=true;
+      if (k=='a' || k=='A') left=true;
+      if (k=='d' || k=='D') right=true;
+    }
+    if (keys.esc || keys.backspace) {
+      loRaFishPage=0;  // Back to aquarium, never advances the menu.
+      _next_refresh=0;
+      if (_display) loRaFishRegisterDisplayActivity(*_display);
+    } else if (keys.enter || keys.space) {
+      c=checkDisplayOn(KEY_ENTER);
+    } else if (right || down) {
+      c=checkDisplayOn(KEY_NEXT);
+    } else if (left || up) {
+      // Existing LoRaFish UI is forward-only; reverse is handled locally.
+      if (loRaFishPage==0) loRaFishPage=LORAFISH_PAGE_COUNT-1;
+      else --loRaFishPage;
+      _next_refresh=0;
+      if (_display) loRaFishRegisterDisplayActivity(*_display);
+    }
+  }
+#endif
 #if UI_HAS_JOYSTICK
   int ev = user_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {

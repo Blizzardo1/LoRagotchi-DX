@@ -33,6 +33,8 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
     - alleviates flash from 95.5% to about 42%, in line with other nodes.
     - retained NVS, Filesystem and Coredump partitions.
     - Disables OTA updates (not used or planned)
+- M5Stack CardPuter
+    - Updated graphics and keyboard controls for the menu
 
 ## Supported LoRaGotchi targets in this tree
 
@@ -43,6 +45,7 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 | Heltec V4 | heltec_v4_LoRaFish_companion_ble |
 | Heltec T114 | Heltec_t114_LoRaFish_companion_ble -t create_uf2 |
 | Heltec T096 | Heltec_t096_LoRaFish_companion_ble -t create_uf2 |
+| M5Stack CardPuter | cardputer_loragotchi |
 
 ## Building
 
