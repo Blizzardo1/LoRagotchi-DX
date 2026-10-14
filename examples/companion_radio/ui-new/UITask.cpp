@@ -2095,6 +2095,12 @@ static void drawLoRaFishSleeping(DisplayDriver& display, UITask* task) {
   const int w=display.width(), h=display.height();
   char tb[8], db[24];
   loRaFishClock(tb,sizeof(tb),db,sizeof(db));
+#if defined(LORAFISH_CARDPUTER_25D)
+  // Keep the same 2.5D tank visible while the local fish sleeps.
+  // Other boards retain their existing sleeping screen.
+  drawCardputerTankDepth(display);
+  drawLoRaFishBubbles(display);
+#endif
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
 
  drawHomeFishSprite(display,w/2-5,38,true);
