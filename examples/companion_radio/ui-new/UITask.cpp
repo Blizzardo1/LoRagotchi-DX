@@ -77,6 +77,14 @@ static uint8_t fishReaction = 0; // 0 normal, 1 RX, 2 TX/ACK, 3 new contact
 static uint8_t loRaFishPage = 0; // 0 aquarium, 1 stats, 2 clock, 3 pairing, 4 DX, 5 options, 6 RF, 7 GNSS, 8 theme, 9 fish, 10 schedule, 11 timeout, 12 display, 13 brightness
 static uint8_t loRaFishOption = 0; // display, reset, RF, GNSS, schedule
 static uint8_t loRaFishDisplayOption = 0;
+static uint8_t loRaFishGuessNumber=0;
+static uint8_t loRaFishGuessPrevious=0;
+static uint8_t loRaFishGuessRounds=0;
+static uint8_t loRaFishGuessScore=0;
+static bool loRaFishGuessHigher=true;
+static bool loRaFishGuessResultShown=false;
+static bool loRaFishGuessCorrect=false;
+static bool loRaFishGuessComplete=false;
 static bool loRaFishSimulationMode = false;
 static uint8_t loRaFishTimeField = 0;
 static uint8_t loRaFishTimeoutField = 0;
@@ -296,16 +304,16 @@ static bool loRaFishCanBreed() {
 }
 static uint8_t loRaFishOptionCount() {
 #ifdef PIN_BUZZER
-  return 6+(loRaFishCanBreed() ? 1 : 0);
+  return 7+(loRaFishCanBreed() ? 1 : 0);
 #else
-  return 5+(loRaFishCanBreed() ? 1 : 0);
+  return 6+(loRaFishCanBreed() ? 1 : 0);
 #endif
 }
 static uint8_t loRaFishBreedOptionIndex() {
 #ifdef PIN_BUZZER
-  return 6;
+  return 7;
 #else
-  return 5;
+  return 6;
 #endif
 }
 static void applyLoRaFishBrightness(DisplayDriver& display, bool dimmed=false) {
@@ -1419,8 +1427,9 @@ static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
   for (uint8_t row=0; row<4 && first+row<count; row++) {
     const uint8_t option=first+row;
     const char* label=option<5 ? labels[option] : "Breed with visitor";
+    if (option==5) label="Guess game";
   #ifdef PIN_BUZZER
-    if (option==5) label="Sound";
+    if (option==6) label="Sound";
   #endif
     char line[24];
     snprintf(line,sizeof(line),"%c %s",option==loRaFishOption ? '>' : ' ',label);
@@ -1438,12 +1447,90 @@ static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
   } else if (loRaFishOption==4) {
     display.drawTextCentered(w/2,56,"LONG PRESS: SCHEDULE");
 #ifdef PIN_BUZZER
-  } else if (loRaFishOption==5) {
+  } else if (loRaFishOption==6) {
     display.drawTextCentered(w/2,56,"LONG PRESS: SOUNDS");
 #endif
+  } else if (loRaFishOption==5) {
+    display.drawTextCentered(w/2,56,"LONG: PLAY GAME");
   } else {
     display.drawTextCentered(w/2,56,"LONG PRESS: BREED");
   }
+}
+
+static void startLoRaFishGuessGame() {
+  const uint32_t seed=(uint32_t)micros() ^ (uint32_t)millis() ^
+      (fish.ageMinutes<<16) ^ fish.rfEvents;
+  randomSeed(seed);
+  loRaFishGuessNumber=(uint8_t)random(1,10);
+  loRaFishGuessPrevious=0;
+  loRaFishGuessRounds=0;
+  loRaFishGuessScore=0;
+  loRaFishGuessHigher=true;
+  loRaFishGuessResultShown=false;
+  loRaFishGuessCorrect=false;
+  loRaFishGuessComplete=false;
+}
+
+static void submitLoRaFishGuess() {
+  if (loRaFishGuessComplete) {
+    startLoRaFishGuessGame();
+    return;
+  }
+
+  uint8_t nextNumber=(uint8_t)random(1,10);
+  while (nextNumber==loRaFishGuessNumber)
+    nextNumber=(uint8_t)random(1,10);
+
+  loRaFishGuessPrevious=loRaFishGuessNumber;
+  loRaFishGuessCorrect=loRaFishGuessHigher
+      ? nextNumber>loRaFishGuessNumber
+      : nextNumber<loRaFishGuessNumber;
+  loRaFishGuessNumber=nextNumber;
+  loRaFishGuessRounds++;
+  loRaFishGuessResultShown=true;
+
+  if (loRaFishGuessCorrect) {
+    loRaFishGuessScore++;
+    if (fish.happiness<100) {
+      fish.happiness++;
+      saveLoRaFish();
+    }
+  }
+  if (loRaFishGuessRounds>=5) loRaFishGuessComplete=true;
+}
+
+static void drawLoRaFishGuessGame(DisplayDriver& display) {
+  const int w=display.width();
+  drawLoRaFishHeader(display,"GUESS GAME","");
+  display.setColor(UIColor::primary_txt);
+
+  if (loRaFishGuessComplete) {
+    char scoreLine[24];
+    snprintf(scoreLine,sizeof(scoreLine),"SCORE %u / 5",(unsigned)loRaFishGuessScore);
+    display.drawTextCentered(w/2,26,scoreLine);
+    display.drawTextCentered(w/2,40,"HAPPY +1 PER WIN");
+    display.setColor(UIColor::secondary_txt);
+    display.drawTextCentered(w/2,55,"LONG: PLAY AGAIN");
+    return;
+  }
+
+  char numberLine[20];
+  if (loRaFishGuessResultShown) {
+    snprintf(numberLine,sizeof(numberLine),"%u -> %u",
+             (unsigned)loRaFishGuessPrevious,(unsigned)loRaFishGuessNumber);
+    display.drawTextCentered(w/2,21,numberLine);
+    display.drawTextCentered(w/2,31,loRaFishGuessCorrect?"CORRECT":"MISS");
+  } else {
+    snprintf(numberLine,sizeof(numberLine),"NUMBER %u",(unsigned)loRaFishGuessNumber);
+    display.drawTextCentered(w/2,25,numberLine);
+  }
+
+  char roundLine[24];
+  snprintf(roundLine,sizeof(roundLine),"ROUND %u/5  SCORE %u",
+           (unsigned)(loRaFishGuessRounds+1),(unsigned)loRaFishGuessScore);
+  display.drawTextCentered(w/2,42,roundLine);
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2,55,loRaFishGuessHigher?"HIGHER  LONG: PICK":"LOWER  LONG: PICK");
 }
 
 static void drawLoRaFishDisplayMenu(DisplayDriver& display) {
@@ -2141,6 +2228,7 @@ static void drawLoRaFish(DisplayDriver& display, UITask* task) {
     case 12: drawLoRaFishDisplayMenu(display); break;
     case 13: drawLoRaFishBrightnessMenu(display); break;
     case 15: drawLoRaFishRenderSpeedMenu(display); break;
+    case 16: drawLoRaFishGuessGame(display); break;
   #ifdef PIN_BUZZER
     case 14: drawLoRaFishSoundMenu(display); break;
   #endif
@@ -2617,6 +2705,11 @@ public:
       } else if (loRaFishPage == 15) {
         loRaFishSimulationMode=!loRaFishSimulationMode;
         saveLoRaFishSettings();
+      } else if (loRaFishPage == 16) {
+        if (!loRaFishGuessComplete) {
+          loRaFishGuessHigher=!loRaFishGuessHigher;
+          loRaFishGuessResultShown=false;
+        }
 #ifdef PIN_BUZZER
       } else if (loRaFishPage == 14) {
         _task->cycleLoRaFishSoundSetting(loRaFishSoundField);
@@ -2874,7 +2967,6 @@ void UITask::notify(UIEventType t) {
     case UIEventType::contactMessage:
     case UIEventType::channelMessage:
     case UIEventType::roomMessage:
-      reactLoRaFish(1);
       break;
     case UIEventType::ack:
       fish.txAcks++;
@@ -3386,9 +3478,15 @@ char UITask::handleLongPress(char c) {
     return 0;
   }
 
+  if (loRaFishPage == 16) {
+    submitLoRaFishGuess();
+    _next_refresh=0;
+    return 0;
+  }
+
 #ifdef PIN_BUZZER
   if (loRaFishPage == 14) {
-    loRaFishOption = 5;
+    loRaFishOption = 6;
     loRaFishPage = 5;
     _next_refresh = 0;
     return 0;
@@ -3486,11 +3584,15 @@ char UITask::handleLongPress(char c) {
       loRaFishPage = 10;
       _next_refresh = 0;
 #ifdef PIN_BUZZER
-    } else if (loRaFishOption == 5) {
+    } else if (loRaFishOption == 6) {
       loRaFishSoundField = 0;
       loRaFishPage = 14;
       _next_refresh = 0;
 #endif
+    } else if (loRaFishOption==5) {
+      startLoRaFishGuessGame();
+      loRaFishPage=16;
+      _next_refresh=0;
     } else if (loRaFishCanBreed() && loRaFishOption==loRaFishBreedOptionIndex()) {
       if (breedLoRaFishWithGuest()) {
         loRaFishOption=0;
@@ -3560,6 +3662,12 @@ char UITask::handleDoubleClick(char c) {
   }
   if (loRaFishPage == 12) {
     loRaFishOption=0;
+    loRaFishPage=5;
+    _next_refresh=0;
+    return 0;
+  }
+  if (loRaFishPage == 16) {
+    loRaFishOption=5;
     loRaFishPage=5;
     _next_refresh=0;
     return 0;

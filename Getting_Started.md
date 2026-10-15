@@ -54,8 +54,13 @@ The main **Options** menu contains:
 - **RF monitor**: view recent received signal information and activity.
 - **GNSS monitor**: inspect GNSS status; long-press toggles GNSS where supported.
 - **Schedule & time**: configure sleep, wake, and UTC offset.
+- **Guess game**: play five rounds of higher/lower to earn happiness when mesh activity is quiet.
 - **Sound**: configure buzzer volume, wake/sleep cues, and message tone on buzzer-equipped builds.
 - **Breed with visitor**: appears when the local fish and a visiting fish are both Adult or Elder and no offspring egg is already pending.
+
+### Guess game
+
+Open **Options → Guess game**. Short-click switches between **Higher** and **Lower**; long-press guesses whether the next number will be higher or lower than the current number. Play five rounds. Each correct guess adds one happiness point; wrong guesses do not reduce happiness or count as mesh activity. At the end, long-press starts another game and double-click returns to Options.
 
 ### Display submenu
 
