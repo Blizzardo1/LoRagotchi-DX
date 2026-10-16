@@ -2848,6 +2848,13 @@ public:
 #ifdef LORAFISH_UI
     // ThinkNode's single user button reports a short click as KEY_NEXT.
     // Joystick-style targets may report KEY_ENTER, so accept either.
+    // A click on the aquarium clears the poop when there is some, and
+    // otherwise moves on to the next page as usual.
+    if (c == KEY_NEXT && loRaFishPage == 0 && loRaFishPoopCount > 0 && !loRaFishCleaning) {
+      startLoRaFishCleaning();
+      _task->showAlert("Cleaning tank!", 450);
+      return true;
+    }
     if (c == KEY_ENTER || c == KEY_NEXT) {
       if (loRaFishPage == 5) {
         loRaFishOption = (loRaFishOption + 1) % loRaFishOptionCount();
