@@ -1731,7 +1731,7 @@ static void drawLoRaFishSoundMenu(DisplayDriver& display) {
     display.drawTextRightAlign(w-3,18+row*10,values[row]);
   }
   display.setColor(UIColor::secondary_txt);
-  display.drawTextCentered(w/2,58,"CLICK:PREVIEW LONG:NEXT 2X:BACK");
+  display.drawTextCentered(w/2,58,"CLICK:PREVIEW 2X:BACK");
 }
 #endif
 
@@ -4017,7 +4017,7 @@ char UITask::handleDoubleClick(char c) {
     return 0;
   }
   if (loRaFishPage == 14) {
-    loRaFishOption = 5;  // Sound -> Options
+    loRaFishOption = 6;  // Sound -> Options
     loRaFishPage = 5;
     _next_refresh = 0;
     return 0;
