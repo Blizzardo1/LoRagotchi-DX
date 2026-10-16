@@ -113,7 +113,7 @@ static constexpr uint8_t LORAFISH_MONOCHROME_COLOR = 6;
 static constexpr uint8_t LORAFISH_MONOCHROME_RENDER_TINT = 7;
 static uint8_t loRaFishScaleColor = 0;
 static uint8_t loRaFishEyeColor = 0;
-static uint8_t loRaFishColorField = 0;
+static uint8_t loRaFishColorField = 1;  // 1 = Body, the main fish colour
 static bool loRaFishAppearanceLoaded = false;
 static bool loRaFishNeedsAppearanceSetup = false;
 static bool loRaFishColorDisplay = false;
@@ -477,7 +477,7 @@ static void resetLoRaFishPet() {
   loRaFishSyncDXAppearance();
 #endif
   if (loRaFishNeedsAppearanceSetup) {
-    loRaFishColorField=0;
+    loRaFishColorField=1;
     loRaFishPage=9;
   }
   saveLoRaFishSettings();
@@ -763,7 +763,7 @@ static void loadLoRaFish() {
   loRaFishNeedsAppearanceSetup=!restored && loRaFishColorDisplay;
   if (loRaFishNeedsAppearanceSetup) {
     loRaFishPage=9;
-    loRaFishColorField=0;
+    loRaFishColorField=1;
   }
   fish.evolution = fishEvolutionForAge(fish.ageMinutes);
   Serial.printf("[LFG2] loaded restored=%d age=%lu visits=%lu longestUp=%lu\n",
@@ -1651,6 +1651,7 @@ static void drawLoRaFishColorMenu(DisplayDriver& display) {
                            : loRaFishColorField==1 ? loRaFishColor : loRaFishEyeColor;
   drawLoRaFishHeader(display,loRaFishNeedsAppearanceSetup ? "NEW FISH" : "FISH COLOR","");
   display.setColor(UIColor::secondary_txt);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(w/2,18,parts[loRaFishColorField % 3]);
 
   display.setColor(loRaFishColorValue(color));
@@ -3785,7 +3786,7 @@ char UITask::handleLongPress(char c) {
     } else if (loRaFishDisplayOption==2) {
       loRaFishPage=8;
     } else if (loRaFishDisplayOption==3 && loRaFishColorDisplay) {
-      loRaFishColorField=0;
+      loRaFishColorField=1;
       loRaFishPage=9;
     } else if (loRaFishDisplayOption==(loRaFishColorDisplay ? 4 : 3)) {
       loRaFishPage=15;
