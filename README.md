@@ -43,9 +43,14 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 | ThinkNode M2 | ThinkNode_M2_LoRaFish_companion_ble |
 | Heltec V3 | Heltec_v3_LoRaFish_companion_ble |
 | Heltec V4 | heltec_v4_LoRaFish_companion_ble |
+| M5Stack CardPuter | cardputer_loragotchi |
 | Heltec T114 | Heltec_t114_LoRaFish_companion_ble -t create_uf2 |
 | Heltec T096 | Heltec_t096_LoRaFish_companion_ble -t create_uf2 |
-| M5Stack CardPuter | cardputer_loragotchi |
+
+| Untested nodes | build Environment |
+| --- | --- |
+| T-Beam (SX1262) | Tbeam_SX1262_LoRaFish_companion_ble
+| T-Beam (SX1276) | Tbeam_SX1276_LoRaFish_companion_ble
 
 ## Building
 
@@ -86,8 +91,6 @@ LoRaFish buzzer outputs are assigned per board:
 | Heltec WiFi LoRa 32 V4 OLED | GPIO6 |
 | Heltec T114 | GPIO46 / P1.14 |
 | Heltec T096 | GPIO45 / P1.13 |
-
-Device-level validation is still needed.
 
 The project tree also retains the wider upstream MeshCore targets and infrastructure from which LoRaGotchi is derived.
 
