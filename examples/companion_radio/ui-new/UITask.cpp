@@ -55,7 +55,7 @@ static const char* loRaFishDisplayName() {
 // LoRaFish MeshCore Edition v0.3.2 - DisplayDriver compatibility
 // MeshCore owns radio + Companion BLE. This pet layer only observes UI events.
 // ============================================================
-struct LoRaFishState {
+struct LoRaFishStateV1 { // layout shipped before the DX and uptime counters
   uint32_t magic;
   uint32_t ageMinutes;
   uint32_t rfEvents;
@@ -65,7 +65,20 @@ struct LoRaFishState {
   uint8_t evolution;
 };
 
-static constexpr uint32_t LORAFISH_MAGIC = 0x4C464D31; // "LFM1"
+struct LoRaFishState {
+  uint32_t magic;
+  uint32_t ageMinutes;
+  uint32_t rfEvents;
+  uint32_t messages;
+  uint32_t txAcks;
+  uint8_t happiness;
+  uint8_t evolution;
+  uint32_t dxVisits;
+  uint32_t longestUptimeMinutes;
+};
+
+static constexpr uint32_t LORAFISH_MAGIC = 0x4C464D32; // "LFM2"
+static constexpr uint32_t LORAFISH_MAGIC_V1 = 0x4C464D31; // "LFM1"
 static void saveLoRaFish();
 static void saveLoRaFishSettings();
 static void scheduleLoRaFishPoop();
@@ -677,7 +690,24 @@ static void loadLoRaFishSettings() {
 #endif
 }
 
+static bool sameLoRaFishRecord(const LoRaFishState& a, const LoRaFishState& b) {
+  return a.magic == b.magic && a.ageMinutes == b.ageMinutes &&
+         a.rfEvents == b.rfEvents && a.messages == b.messages &&
+         a.txAcks == b.txAcks && a.happiness == b.happiness &&
+         a.evolution == b.evolution && a.dxVisits == b.dxVisits &&
+         a.longestUptimeMinutes == b.longestUptimeMinutes;
+}
+
+static LoRaFishState lastWrittenLoRaFish;
+static bool haveLastWrittenLoRaFish = false;
+
 static void saveLoRaFish() {
+  // Skip identical writes. Flash has limited erase cycles, and this also
+  // stops the same record being written twice in one save cycle.
+  if (haveLastWrittenLoRaFish && sameLoRaFishRecord(lastWrittenLoRaFish, fish)) {
+    fishLastSave = millis();
+    return;
+  }
 #ifdef ESP32
   File f = SPIFFS.open("/lorafish.dat", FILE_WRITE);
 #elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -690,6 +720,11 @@ static void saveLoRaFish() {
   if (f) {
     f.write((const uint8_t*)&fish, sizeof(fish));
     f.close();
+    lastWrittenLoRaFish = fish;
+    haveLastWrittenLoRaFish = true;
+    Serial.printf("[LFG2] saved age=%lu rf=%lu visits=%lu longestUp=%lu\n",
+                  (unsigned long)fish.ageMinutes,(unsigned long)fish.rfEvents,
+                  (unsigned long)fish.dxVisits,(unsigned long)fish.longestUptimeMinutes);
   }
 #endif
   fishLastSave = millis();
@@ -705,7 +740,17 @@ static void loadLoRaFish() {
   File f;
 #endif
 #if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  if (f && f.size() == sizeof(fish)) {
+  if (f && f.size() == sizeof(LoRaFishStateV1)) {
+    LoRaFishStateV1 old;
+    if (f.read((uint8_t*)&old, sizeof(old)) == sizeof(old) &&
+        old.magic == LORAFISH_MAGIC_V1) {
+      fish = {LORAFISH_MAGIC, old.ageMinutes, old.rfEvents, old.messages,
+              old.txAcks, old.happiness, old.evolution, 0, 0};
+      restored=true;
+      Serial.println("[LFG2] migrated LFM1 fish record");
+    }
+    f.close();
+  } else if (f && f.size() == sizeof(fish)) {
     LoRaFishState tmp;
     if (f.read((uint8_t*)&tmp, sizeof(tmp)) == sizeof(tmp) &&
         tmp.magic == LORAFISH_MAGIC) {
@@ -721,6 +766,9 @@ static void loadLoRaFish() {
     loRaFishColorField=0;
   }
   fish.evolution = fishEvolutionForAge(fish.ageMinutes);
+  Serial.printf("[LFG2] loaded restored=%d age=%lu visits=%lu longestUp=%lu\n",
+                restored ? 1 : 0,(unsigned long)fish.ageMinutes,
+                (unsigned long)fish.dxVisits,(unsigned long)fish.longestUptimeMinutes);
   fishLastMinute = millis();
   fishLastSave = millis();
   loRaFishNextAutoFeed =
@@ -729,7 +777,10 @@ static void loadLoRaFish() {
 
 static void hatchLoRaFishOffspring() {
   if (!loRaFishPendingEgg) return;
-  fish = {LORAFISH_MAGIC, 0, 0, 0, 0, 80, 0};
+  // DX visits and uptime records belong to the device, so they survive a hatch.
+  const uint32_t keepVisits = fish.dxVisits;
+  const uint32_t keepUptime = fish.longestUptimeMinutes;
+  fish = {LORAFISH_MAGIC, 0, 0, 0, 0, 80, 0, keepVisits, keepUptime};
   loRaFishColor=loRaFishEggAppearance.body;
   loRaFishScaleColor=loRaFishEggAppearance.scales;
   loRaFishEyeColor=loRaFishEggAppearance.eyes;
@@ -760,6 +811,8 @@ static void tickLoRaFish() {
     fishLastMinute=now;
     return;
   }
+  const uint32_t uptimeMinutes = now / 60000UL;
+  if (uptimeMinutes > fish.longestUptimeMinutes) fish.longestUptimeMinutes = uptimeMinutes;
   while (now - fishLastMinute >= 60000UL) {
     fishLastMinute += 60000UL;
     fish.ageMinutes++;
@@ -1277,6 +1330,11 @@ static void loRaFishObserveTravelTransitions() {
     loRaFishQueueTravelAnimation(loRaFishHomeTravelAnimation,!homeAway,fish.evolution,
                                  loRaFishLocalAppearance());
     loRaFishLastHomeAway=homeAway;
+    if (!homeAway) {
+      fish.dxVisits++;
+      saveLoRaFish();
+      Serial.printf("[LFG2] DX visit complete, total=%lu\n",(unsigned long)fish.dxVisits);
+    }
   }
 
   if (guestPresent!=loRaFishLastGuestPresent) {
