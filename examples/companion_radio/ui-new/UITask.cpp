@@ -3383,6 +3383,43 @@ static void drawUIAlertBox(DisplayDriver& display, const char* alert) {
 void UITask::loop() {
 #ifdef LORAFISH_UI
   tickLoRaFish();
+#if defined(LORAFISH_SERIAL_TEST)
+  {
+    // Test-only commands over the USB serial port, one per line:
+    // next, enter, long, double, advert, page. Not present in normal builds.
+    static char cmdBuf[24];
+    static uint8_t cmdLen = 0;
+    while (Serial.available()) {
+      char ch = (char)Serial.read();
+      if (ch == '\r') continue;
+      if (ch != '\n') {
+        if (cmdLen < sizeof(cmdBuf) - 1) cmdBuf[cmdLen++] = ch;
+        continue;
+      }
+      cmdBuf[cmdLen] = '\0';
+      cmdLen = 0;
+      if (!strcmp(cmdBuf, "next") && curr) {
+        curr->handleInput(KEY_NEXT);
+      } else if (!strcmp(cmdBuf, "enter") && curr) {
+        curr->handleInput(KEY_ENTER);
+      } else if (!strcmp(cmdBuf, "long")) {
+        char c = handleLongPress(KEY_ENTER);
+        if (c && curr) curr->handleInput(c);
+      } else if (!strcmp(cmdBuf, "double")) {
+        char c = handleDoubleClick(KEY_PREV);
+        if (c && curr) curr->handleInput(c);
+      } else if (!strcmp(cmdBuf, "advert")) {
+        bool ok = the_mesh.advert();
+        Serial.printf("[TEST] advert %s\n", ok ? "sent" : "failed");
+      } else if (!strcmp(cmdBuf, "page")) {
+        Serial.printf("[TEST] page %u\n", (unsigned)loRaFishPage);
+      } else {
+        Serial.printf("[TEST] unknown '%s'\n", cmdBuf);
+      }
+      _next_refresh = 0;
+    }
+  }
+#endif
   serviceLoRaFishDXCommit();
   loRaFishObserveTravelTransitions();
   if (loragotchiDXHome.returned) {
