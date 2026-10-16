@@ -3373,6 +3373,19 @@ bool UITask::isButtonPressed() const {
 #endif
 }
 
+// Alert popup, drawn over whatever page is showing. Used by both the full-frame
+// and the banded render paths.
+static void drawUIAlertBox(DisplayDriver& display, const char* alert) {
+  display.setTextSize(1);
+  int y = display.height() / 3;
+  int p = display.height() / 32;
+  display.setColor(UIColor::popup_bkg);
+  display.fillRect(p, y, display.width() - p*2, y);
+  display.setColor(UIColor::popup_txt);  // draw box border
+  display.drawRect(p, y, display.width() - p*2, y);
+  display.drawTextCentered(display.width() / 2, y + p*3, alert);
+}
+
 void UITask::loop() {
 #ifdef LORAFISH_UI
   tickLoRaFish();
@@ -3587,22 +3600,34 @@ void UITask::loop() {
     }
 #endif
     if (millis() >= _next_refresh && curr) {
-      _display->startFrame();
-      int delay_millis = curr->render(*_display);
-      if (millis() < _alert_expiry) {  // render alert popup
-        _display->setTextSize(1);
-        int y = _display->height() / 3;
-        int p = _display->height() / 32;
-        _display->setColor(UIColor::popup_bkg);
-        _display->fillRect(p, y, _display->width() - p*2, y);
-        _display->setColor(UIColor::popup_txt);  // draw box border
-        _display->drawRect(p, y, _display->width() - p*2, y);
-        _display->drawTextCentered(_display->width() / 2, y + p*3, _alert);
+      int delay_millis = 0;
+      bool banded = false;
+#ifdef LORAFISH_STRIP_REDRAW
+      // The aquarium is the animated page that flickered on a full-screen clear,
+      // so it is drawn in bands: each band is cleared and pushed on its own.
+      banded = (loRaFishPage == 0) && _display->stripRows() > 0;
+#endif
+      if (banded) {
+        const int rows = _display->stripRows();
+        const int panelRows = _display->physicalHeight();
+        for (int y0 = 0; y0 < panelRows; y0 += rows) {
+          _display->beginStrip(y0);
+          _display->startFrame();
+          delay_millis = curr->render(*_display);
+          if (millis() < _alert_expiry) drawUIAlertBox(*_display, _alert);
+          _display->endStrip();
+        }
+      } else {
+        _display->startFrame();
+        delay_millis = curr->render(*_display);
+        if (millis() < _alert_expiry) drawUIAlertBox(*_display, _alert);  // render alert popup
+        _display->endFrame();
+      }
+      if (millis() < _alert_expiry) {
         _next_refresh = _alert_expiry;   // will need refresh when alert is dismissed
       } else {
         _next_refresh = millis() + delay_millis;
       }
-      _display->endFrame();
     }
 #if AUTO_OFF_MILLIS > 0
 #ifdef KEEP_DISPLAY_ON_USB

@@ -1,5 +1,4 @@
 #include "ST7789LCDDisplay.h"
-
 #ifndef PIN_TFT_MISO
   #define PIN_TFT_MISO -1
 #endif
@@ -27,6 +26,11 @@
 
 #ifndef TFT_SPI_SPEED
   #define TFT_SPI_SPEED 40e6
+#endif
+
+// Physical rows per band when strip redraw is enabled (LORAFISH_STRIP_REDRAW).
+#ifndef BAND_ROWS
+  #define BAND_ROWS 16
 #endif
 
 bool ST7789LCDDisplay::i2c_probe(TwoWire& wire, uint8_t addr) {
@@ -116,35 +120,52 @@ void ST7789LCDDisplay::clear() {
   display.fillScreen(ST77XX_BLACK);
 }
 
+// Where drawing goes right now: the band buffer while a band is open, else the panel.
+Adafruit_GFX& ST7789LCDDisplay::gfx() {
+#ifdef LORAFISH_STRIP_REDRAW
+  if (_bandActive && _band) return *_band;
+#endif
+  return display;
+}
+
 void ST7789LCDDisplay::startFrame(ColorVal bkg) {
-  display.fillScreen(bkg);
-  display.setTextColor(_color = UIColor::primary_txt);
-  display.setTextSize(1 * DISPLAY_SCALE_X); // This one affects size of Please wait... message
-  display.cp437(true); // Use full 256 char 'Code Page 437' font
+  Adafruit_GFX& g = gfx();
+  g.fillScreen(bkg);
+  g.setTextColor(_color = UIColor::primary_txt);
+  g.setTextSize(1 * DISPLAY_SCALE_X); // This one affects size of Please wait... message
+  g.cp437(true); // Use full 256 char 'Code Page 437' font
 }
 
 void ST7789LCDDisplay::setTextSize(int sz) {
   display.setTextSize(sz * DISPLAY_SCALE_X);
+#ifdef LORAFISH_STRIP_REDRAW
+  if (_band) _band->setTextSize(sz * DISPLAY_SCALE_X);
+#endif
 }
 
 void ST7789LCDDisplay::setColor(ColorVal c) {
   display.setTextColor(_color = c);
+#ifdef LORAFISH_STRIP_REDRAW
+  if (_band) _band->setTextColor(c);
+#endif
 }
 
 void ST7789LCDDisplay::setCursor(int x, int y) {
-  display.setCursor(x * DISPLAY_SCALE_X, y * DISPLAY_SCALE_Y);
+  gfx().setCursor((int)(x * DISPLAY_SCALE_X), (int)(y * DISPLAY_SCALE_Y) - bandOffset());
 }
 
 void ST7789LCDDisplay::print(const char* str) {
-  display.print(str);
+  gfx().print(str);
 }
 
 void ST7789LCDDisplay::fillRect(int x, int y, int w, int h) {
-  display.fillRect(x * DISPLAY_SCALE_X, y * DISPLAY_SCALE_Y, w * DISPLAY_SCALE_X, h * DISPLAY_SCALE_Y, _color);
+  gfx().fillRect((int)(x * DISPLAY_SCALE_X), (int)(y * DISPLAY_SCALE_Y) - bandOffset(),
+                 (int)(w * DISPLAY_SCALE_X), (int)(h * DISPLAY_SCALE_Y), _color);
 }
 
 void ST7789LCDDisplay::drawRect(int x, int y, int w, int h) {
-  display.drawRect(x * DISPLAY_SCALE_X, y * DISPLAY_SCALE_Y, w * DISPLAY_SCALE_X, h * DISPLAY_SCALE_Y, _color);
+  gfx().drawRect((int)(x * DISPLAY_SCALE_X), (int)(y * DISPLAY_SCALE_Y) - bandOffset(),
+                 (int)(w * DISPLAY_SCALE_X), (int)(h * DISPLAY_SCALE_Y), _color);
 }
 
 void ST7789LCDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
@@ -158,7 +179,8 @@ void ST7789LCDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) 
       if (pixelOn) {
         for (int dy = 0; dy < DISPLAY_SCALE_X; dy++) {
           for (int dx = 0; dx < DISPLAY_SCALE_X; dx++) {
-            display.drawPixel(x * DISPLAY_SCALE_X + i * DISPLAY_SCALE_X + dx, y * DISPLAY_SCALE_Y + j * DISPLAY_SCALE_X + dy, _color);
+            gfx().drawPixel((int)(x * DISPLAY_SCALE_X + i * DISPLAY_SCALE_X + dx),
+                            (int)(y * DISPLAY_SCALE_Y + j * DISPLAY_SCALE_X + dy) - bandOffset(), _color);
           }
         }
       }
@@ -176,4 +198,47 @@ uint16_t ST7789LCDDisplay::getTextWidth(const char* str) {
 
 void ST7789LCDDisplay::endFrame() {
   // display.display();
+}
+
+// Strip redraw: the caller draws the frame once per band. Only the T114 build
+// enables this (LORAFISH_STRIP_REDRAW); other boards report 0 and keep the
+// single full-screen frame.
+int ST7789LCDDisplay::stripRows() const {
+#ifdef LORAFISH_STRIP_REDRAW
+  return BAND_ROWS;
+#else
+  return 0;
+#endif
+}
+
+int ST7789LCDDisplay::physicalHeight() const {
+  return _isOn ? display.height() : 0;
+}
+
+void ST7789LCDDisplay::beginStrip(int physY0) {
+#ifdef LORAFISH_STRIP_REDRAW
+  if (!_band) {
+    _band = new GFXcanvas16(display.width(), BAND_ROWS);
+    if (!_band) return;
+    _band->setTextSize(1 * DISPLAY_SCALE_X);
+    _band->cp437(true);
+  }
+  _bandY0 = physY0;
+  _bandActive = true;
+  _band->fillScreen(UIColor::window_bkg);
+  _band->setTextColor(_color);
+#else
+  (void)physY0;
+#endif
+}
+
+void ST7789LCDDisplay::endStrip() {
+#ifdef LORAFISH_STRIP_REDRAW
+  if (_bandActive && _band) {
+    int rows = min((int)BAND_ROWS, (int)display.height() - _bandY0);
+    if (rows > 0) display.drawRGBBitmap(0, _bandY0, _band->getBuffer(), _band->width(), rows);
+  }
+  _bandActive = false;
+  _bandY0 = 0;
+#endif
 }
