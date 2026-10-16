@@ -1351,6 +1351,29 @@ static void drawLoRaFishHeader(DisplayDriver& display, const char* title,
   display.fillRect(2,15,w-4,1);
 }
 
+// Compact battery icon immediately to the left of the aquarium clock.
+// Uses the same 3.3-4.2 V percentage mapping as the RF monitor.
+static void drawLoRaFishTankBattery(DisplayDriver& display, UITask* task,
+                                   const char* clockText) {
+  if (!task) return;
+  const int w = display.width();
+  const int clockWidth = (int)strlen(clockText) * 6; // default text size 1
+  const int x = w - 2 - clockWidth - 21;
+  if (x < 0) return;
+  const uint16_t mv = task->getBattMilliVolts();
+  const int pct = constrain(((int)mv - 3300) * 100 / 900, 0, 100);
+  display.setColor(UIColor::primary_txt);
+  display.drawRect(x, 5, 15, 8);
+  display.fillRect(x + 15, 7, 2, 4);
+  if (mv > 0) {
+    const int fill = (pct * 11 + 50) / 100;
+    if (fill > 0) display.fillRect(x + 2, 7, fill, 4);
+  } else {
+    display.setCursor(x + 5, 5);
+    display.print("?");
+  }
+}
+
 static void drawLoRaFishEggSprite(DisplayDriver& display,int centerX,int topY) {
   int wobble=((millis()/350UL)%3)-1;
   display.setColor(UIColor::primary_txt);
@@ -1384,6 +1407,7 @@ static void drawLoRaFishEgg(DisplayDriver& display,UITask* task) {
   const int w=display.width(), h=display.height();
   char tb[8],db[24]; loRaFishClock(tb,sizeof(tb),db,sizeof(db));
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
+  drawLoRaFishTankBattery(display,task,tb);
   drawLoRaFishEggSprite(display,w/2,24);
   display.fillRect(2,h-15,w-4,1);
   drawLoRaFishTankStatusBar(display,"0",task);
@@ -1957,6 +1981,7 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
   drawCardputerTankDepth(display);
 #endif
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
+  drawLoRaFishTankBattery(display,task,tb);
 
   display.setColor(UIColor::secondary_txt);
   display.fillRect(2,h-15,w-4,1);
@@ -2190,6 +2215,7 @@ static void drawLoRaFishSleeping(DisplayDriver& display, UITask* task) {
   drawLoRaFishBubbles(display);
 #endif
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
+  drawLoRaFishTankBattery(display,task,tb);
 
  drawHomeFishSprite(display,w/2-5,38,true);
 
