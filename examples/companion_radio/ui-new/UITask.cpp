@@ -1802,7 +1802,7 @@ static void drawLoRaFishDX(DisplayDriver& display) {
     display.drawTextCentered(w/2,27,"FISH AWAY");
     display.setColor(UIColor::secondary_txt);
     display.drawTextCentered(w/2,39,loragotchiDXHome.destinationName);
-    display.drawTextCentered(w/2,h-9,"LONG:RECALL  2X:BACK");
+    display.drawTextCentered(w/2,h-9,"LONG:RECALL  2X:OPTIONS");
   } else if(loragotchiDXHome.committing) {
     display.drawTextCentered(w/2,28,"DELIVERING...");
     display.setColor(UIColor::secondary_txt);
@@ -1825,7 +1825,7 @@ static void drawLoRaFishDX(DisplayDriver& display) {
           (unsigned long)(loRaFishDXContactIndex+1),the_mesh.getNumContacts());
       display.setColor(UIColor::secondary_txt);
       display.drawTextCentered(w/2,39,b);
-      display.drawTextCentered(w/2,h-9,"LONG:SEND  2X:BACK");
+      display.drawTextCentered(w/2,h-9,"LONG:SEND  2X:OPTIONS");
     } else display.drawTextCentered(w/2,31,"NO CONTACTS");
   }
 }
@@ -3891,7 +3891,8 @@ char UITask::handleDoubleClick(char c) {
 #ifdef LORAFISH_UI
   if (_display != NULL && _display->isOn()) loRaFishRegisterDisplayActivity(*_display);
   if (loRaFishPage == 4) {
-    loRaFishPage = 0;  // DX Visit -> Aquarium
+    loRaFishPage = 5;  // DX Visit -> Options
+    loRaFishOption = 0;
     _next_refresh = 0;
     return 0;
   }
