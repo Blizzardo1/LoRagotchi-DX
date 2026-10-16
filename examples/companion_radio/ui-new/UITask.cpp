@@ -3934,6 +3934,11 @@ char UITask::handleDoubleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: double-click triggered");
 #ifdef LORAFISH_UI
   if (_display != NULL && _display->isOn()) loRaFishRegisterDisplayActivity(*_display);
+  if (loRaFishPage == 1 || loRaFishPage == 2 || loRaFishPage == 3) {
+    loRaFishPage = 0;  // Stats, clock or pairing -> Aquarium
+    _next_refresh = 0;
+    return 0;
+  }
   if (loRaFishPage == 4) {
     loRaFishPage = 5;  // DX Visit -> Options
     loRaFishOption = 0;
