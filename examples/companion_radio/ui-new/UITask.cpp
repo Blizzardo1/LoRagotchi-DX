@@ -2896,6 +2896,18 @@ public:
       } else if (loRaFishPage == 4 && !loragotchiDXHome.away && !loragotchiDXHome.pending) {
         int n=the_mesh.getNumContacts();
         if(n>0) loRaFishDXContactIndex=(loRaFishDXContactIndex+1)%n;
+      } else if (c == KEY_ENTER && loRaFishPage == 0) {
+        // Long press on the aquarium sends our advert, at most once a minute.
+        static unsigned long lastAdvertMs = 0;
+        const unsigned long now = millis();
+        if (lastAdvertMs != 0 && now - lastAdvertMs < 60000UL) {
+          _task->showAlert("Advert wait", 800);
+        } else {
+          lastAdvertMs = now;
+          _task->notify(UIEventType::ack);
+          if (the_mesh.advert()) _task->showAlert("Advert sent!", 1000);
+          else _task->showAlert("Advert failed..", 1000);
+        }
       } else {
         loRaFishPage = (loRaFishPage + 1) % LORAFISH_PAGE_COUNT;
       }
