@@ -19,6 +19,10 @@ class ST7789LCDDisplay : public DisplayDriver {
   // Band buffer for strip redraw: when active, drawing goes into a small
   // off-screen band instead of straight to the panel, so the panel is never
   // blanked for the whole frame. Only used when LORAFISH_STRIP_REDRAW is set.
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  GFXcanvas16* _frame = nullptr;
+  bool _frameActive = false;
+#endif
   GFXcanvas16* _band = nullptr;
   bool _bandActive = false;
   int _bandY0 = 0;

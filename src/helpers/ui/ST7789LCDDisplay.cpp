@@ -85,6 +85,18 @@ bool ST7789LCDDisplay::begin() {
     display.setTextSize(2 * DISPLAY_SCALE_X); 
     display.cp437(true); // Use full 256 char 'Code Page 437' font
   
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+    if (!_frame) {
+      // GFXcanvas16 uses malloc; ESP32 Arduino can route large allocations to PSRAM.
+      // Fall back to direct drawing if the allocation cannot be satisfied.
+      _frame = new GFXcanvas16(display.width(), display.height());
+      if (_frame && !_frame->getBuffer()) { delete _frame; _frame = nullptr; }
+      if (_frame) {
+        _frame->cp437(true);
+        Serial.printf("[LFG FRAME] RGB565 buffer ready: %d x %d\n", display.width(), display.height());
+      } else Serial.println("[LFG FRAME] allocation failed; direct display fallback");
+    }
+#endif
     _isOn = true;
   }
 
@@ -117,11 +129,17 @@ void ST7789LCDDisplay::turnOff() {
 }
 
 void ST7789LCDDisplay::clear() {
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  if (_frameActive && _frame) { _frame->fillScreen(ST77XX_BLACK); return; }
+#endif
   display.fillScreen(ST77XX_BLACK);
 }
 
 // Where drawing goes right now: the band buffer while a band is open, else the panel.
 Adafruit_GFX& ST7789LCDDisplay::gfx() {
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  if (_frameActive && _frame) return *_frame;
+#endif
 #ifdef LORAFISH_STRIP_REDRAW
   if (_bandActive && _band) return *_band;
 #endif
@@ -129,6 +147,9 @@ Adafruit_GFX& ST7789LCDDisplay::gfx() {
 }
 
 void ST7789LCDDisplay::startFrame(ColorVal bkg) {
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  _frameActive = _frame != nullptr;
+#endif
   Adafruit_GFX& g = gfx();
   g.fillScreen(bkg);
   g.setTextColor(_color = UIColor::primary_txt);
@@ -138,6 +159,9 @@ void ST7789LCDDisplay::startFrame(ColorVal bkg) {
 
 void ST7789LCDDisplay::setTextSize(int sz) {
   display.setTextSize(sz * DISPLAY_SCALE_X);
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  if (_frame) _frame->setTextSize(sz * DISPLAY_SCALE_X);
+#endif
 #ifdef LORAFISH_STRIP_REDRAW
   if (_band) _band->setTextSize(sz * DISPLAY_SCALE_X);
 #endif
@@ -145,6 +169,9 @@ void ST7789LCDDisplay::setTextSize(int sz) {
 
 void ST7789LCDDisplay::setColor(ColorVal c) {
   display.setTextColor(_color = c);
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  if (_frame) _frame->setTextColor(c);
+#endif
 #ifdef LORAFISH_STRIP_REDRAW
   if (_band) _band->setTextColor(c);
 #endif
@@ -197,6 +224,12 @@ uint16_t ST7789LCDDisplay::getTextWidth(const char* str) {
 }
 
 void ST7789LCDDisplay::endFrame() {
+#ifdef LORAFISH_TDECK_FRAMEBUFFER
+  if (_frameActive && _frame) {
+    _frameActive = false;
+    display.drawRGBBitmap(0, 0, _frame->getBuffer(), _frame->width(), _frame->height());
+  }
+#endif
   // display.display();
 }
 

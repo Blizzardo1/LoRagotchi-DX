@@ -132,9 +132,17 @@ void halt() {
   bool wifi_enabled = false;   // set at boot from prefs; false also when the effective SSID is blank
 #endif
 
+#if defined(LILYGO_TDECK) && defined(LORAFISH_UI)
+  #define TDECK_BOOT_TRACE(stage) do { Serial.printf("[TDECK BOOT] %lu ms: %s\n", (unsigned long)millis(), stage); Serial.flush(); } while (0)
+#else
+  #define TDECK_BOOT_TRACE(stage) do {} while (0)
+#endif
+
 void setup() {
   Serial.begin(115200);
+  TDECK_BOOT_TRACE("setup start");
   board.begin();
+  TDECK_BOOT_TRACE("board ready");
 
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.begin();
@@ -154,7 +162,9 @@ void setup() {
   }
 #endif
 
+  TDECK_BOOT_TRACE("radio init begin");
   if (!radio_init()) { halt(); }
+  TDECK_BOOT_TRACE("radio init end");
 
   fast_rng.begin(radio_driver.getRngSeed());
 
@@ -179,15 +189,22 @@ void setup() {
   store.begin();
   the_mesh.begin();
 #elif defined(ESP32)
+  TDECK_BOOT_TRACE("SPIFFS mount begin");
   SPIFFS.begin(true);
+  TDECK_BOOT_TRACE("SPIFFS mount end");
+  TDECK_BOOT_TRACE("datastore begin");
   store.begin();
+  TDECK_BOOT_TRACE("mesh begin");
   the_mesh.begin();
+  TDECK_BOOT_TRACE("mesh ready");
 #else
   #error "need to define filesystem"
 #endif
 
 #ifdef LORAFISH_UI
+  TDECK_BOOT_TRACE("fish load begin");
   loragotchiDXLoad();
+  TDECK_BOOT_TRACE("fish load end");
 #endif
 
 #ifdef BLE_PIN_CODE // 123456 by default
@@ -283,7 +300,9 @@ void setup() {
   interface_manager.addInterface(InterfaceType::HardwareSerial, &hardware_serial_interface);
 #endif
 
+  TDECK_BOOT_TRACE("interface start begin");
   the_mesh.startInterface(interface_manager);
+  TDECK_BOOT_TRACE("interface start end");
   sensors.begin();
 
 #if ENV_INCLUDE_GPS == 1
@@ -291,11 +310,13 @@ void setup() {
 #endif
 
 #ifdef DISPLAY_CLASS
+  TDECK_BOOT_TRACE("UI begin");
   ui_task.begin(disp, &sensors, the_mesh.getNodePrefs());  // still want to pass this in as dependency, as prefs might be moved
   the_mesh.setListener(&ui_task);
 #endif
 
   board.onBootComplete();
+  TDECK_BOOT_TRACE("boot complete");
 }
 
 void loop() {

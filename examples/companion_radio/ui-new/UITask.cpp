@@ -3,6 +3,58 @@
 #ifdef ESP32
 #include <SPIFFS.h>
 #endif
+#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
+#include <Preferences.h>
+#include <vector>
+// File-compatible, bounded RAM buffer backed by a dedicated NVS namespace.
+// Only the two tiny fish records use this; MeshCore storage is unchanged.
+class LoRaFishNVSFile {
+  Preferences prefs;
+  std::vector<uint8_t> bytes;
+  size_t cursor=0;
+  bool writable=false;
+  bool opened=false;
+  const char* key;
+public:
+  LoRaFishNVSFile(const char* record, bool write):writable(write),key(record) {
+    opened=prefs.begin("lfgfish", !write);
+    if (!opened) { Serial.println("[LFG NVS] namespace open failed"); return; }
+    if (!write) {
+      const size_t len=prefs.getBytesLength(key);
+      if (len>0 && len<=512) {
+        bytes.resize(len);
+        if (prefs.getBytes(key,bytes.data(),len)!=len) bytes.clear();
+      }
+    }
+  }
+  ~LoRaFishNVSFile() { close(); }
+  explicit operator bool() const { return opened && (writable || !bytes.empty()); }
+  size_t size() const { return bytes.size(); }
+  size_t write(uint8_t v) { return write(&v,1); }
+  size_t write(const uint8_t* data,size_t len) {
+    if (!opened || !writable || bytes.size()+len>512) return 0;
+    bytes.insert(bytes.end(),data,data+len);
+    return len;
+  }
+  int read(uint8_t* dest,size_t len) {
+    const size_t available=cursor<bytes.size()?bytes.size()-cursor:0;
+    const size_t count=len<available?len:available;
+    if(count) memcpy(dest,bytes.data()+cursor,count);
+    cursor+=count;
+    return (int)count;
+  }
+  void close() {
+    if (!opened) return;
+    if (writable) {
+      size_t written=prefs.putBytes(key,bytes.data(),bytes.size());
+      Serial.printf("[LFG NVS] save %s %u/%u bytes %s\n",key,(unsigned)written,(unsigned)bytes.size(),written==bytes.size()?"OK":"FAILED");
+    } else {
+      Serial.printf("[LFG NVS] read %s %u bytes\n",key,(unsigned)bytes.size());
+    }
+    prefs.end(); opened=false;
+  }
+};
+#endif
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "target.h"
@@ -566,7 +618,9 @@ static const char* fishStageName() {
 }
 
 static void saveLoRaFishSettings() {
-#ifdef ESP32
+#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
+  LoRaFishNVSFile f("cfg", true);
+#elif defined(ESP32)
   File f = SPIFFS.open("/lorafish.cfg", FILE_WRITE);
 #elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   InternalFS.remove("/lorafish.cfg");
@@ -605,7 +659,9 @@ static void saveLoRaFishSettings() {
 }
 
 static void loadLoRaFishSettings() {
-#ifdef ESP32
+#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
+  LoRaFishNVSFile f("cfg", false);
+#elif defined(ESP32)
   File f = SPIFFS.open("/lorafish.cfg", FILE_READ);
 #elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   File f = InternalFS.open("/lorafish.cfg", FILE_O_READ);
@@ -709,7 +765,9 @@ static void saveLoRaFish() {
     fishLastSave = millis();
     return;
   }
-#ifdef ESP32
+#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
+  LoRaFishNVSFile f("state", true);
+#elif defined(ESP32)
   File f = SPIFFS.open("/lorafish.dat", FILE_WRITE);
 #elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   InternalFS.remove("/lorafish.dat");
@@ -733,7 +791,9 @@ static void saveLoRaFish() {
 
 static void loadLoRaFish() {
   bool restored=false;
-#ifdef ESP32
+#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
+  LoRaFishNVSFile f("state", false);
+#elif defined(ESP32)
   File f = SPIFFS.open("/lorafish.dat", FILE_READ);
 #elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   File f = InternalFS.open("/lorafish.dat", FILE_O_READ);
@@ -1293,6 +1353,15 @@ static void drawCardputerTankDepth(DisplayDriver& d) {
 
 static void drawFishSpriteForStage(DisplayDriver& d,int x,int y,bool right,uint8_t stage,
                                   const LoRaFishAppearance& appearance) {
+#if defined(LORAFISH_TDECK_PIXEL_ART)
+  // Two-tone pixel shadow and animated sparkle; original evolution sprites
+  // and colour genetics remain untouched.
+  const int radius=stage==0?6:stage==1?9:stage==2?13:15;
+  d.setColor(0x0128);
+  d.fillRect(x-radius+2,y+8,radius*2-4,2);
+  d.setColor(0x4E1B);
+  d.fillRect(x-radius/2,y-radius/2-6,5,2);
+#endif
 #if defined(LORAFISH_CARDPUTER_25D)
   drawCardputerFishDepth(d,x,y,right,stage,appearance);
 #endif
@@ -1945,6 +2014,66 @@ static void drawLoRaFishGNSS(DisplayDriver& display, UITask* task) {
 }
 
 
+// T-Deck 16-bit aquarium scenery. All shapes are integer pixel primitives;
+// no spritesheets, dynamic allocation, or additional flash partitions.
+#if defined(LORAFISH_TDECK_PIXEL_ART)
+static void drawTDeckPixelAquarium(DisplayDriver& d) {
+  const int w=d.width(), h=d.height();
+  const int top=17, bottom=h-17, span=bottom-top;
+  if (span<30) return;
+  // Four broad bands reduce large SPI transactions on the unbuffered LCD.
+  static const uint16_t water[4]={0x0129,0x016B,0x01AD,0x01EF};
+  for(int i=0;i<4;i++) {
+    const int y0=top+span*i/4, y1=top+span*(i+1)/4;
+    d.setColor(water[i]); d.fillRect(0,y0,w,y1-y0);
+  }
+  // Broken pixel-light shafts near the surface.
+  d.setColor(0x2B95);
+  for(int i=0;i<5;i++) {
+    const int x=19+i*(w-38)/4;
+    for(int j=0;j<5;j++) d.fillRect(x-j*2,top+3+j*5,3,3);
+  }
+  // Distant reef: stepped silhouettes behind the swimming fish.
+  d.setColor(0x0168);
+  for(int i=0;i<9;i++) {
+    const int x=i*41-12, y=bottom-25-(i%3)*5;
+    d.fillRect(x,y,29,bottom-y);
+    d.fillRect(x+7,y-5,15,6);
+    d.fillRect(x+11,y-9,7,5);
+  }
+  // Layered sandy floor and chunky rocks.
+  d.setColor(0x5AC9); d.fillRect(0,bottom-13,w,13);
+  d.setColor(0x9C6B); d.fillRect(0,bottom-9,w,9);
+  d.setColor(0xDDAF); d.fillRect(0,bottom-9,w,2);
+  for(int i=0;i<7;i++) {
+    const int x=12+i*49;
+    d.setColor((i&1)?0x39A8:0x3187);
+    d.fillRect(x,bottom-18,21,7);
+    d.fillRect(x+4,bottom-22,13,5);
+    d.setColor(0x6B6D); d.fillRect(x+5,bottom-21,5,2);
+  }
+  // Pixel seaweed: three offset stems, subtly animated.
+  for(int i=0;i<9;i++) {
+    const int x=9+i*38, base=bottom-10;
+    const int sway=(int)((millis()/420UL+i*3)%5)-2;
+    d.setColor((i&1)?0x04E7:0x05A8);
+    for(int j=0;j<5;j++) {
+      const int yy=base-j*6;
+      const int xx=x+((j&1)?sway:-sway);
+      d.fillRect(xx,yy,3,7);
+      if(j>0 && j<4) d.fillRect(xx+((j&1)?3:-4),yy+1,5,2);
+    }
+  }
+  // Sparse animated floating pixels, distinct from existing bubbles.
+  d.setColor(0x65DB);
+  for(int i=0;i<13;i++) {
+    const int x=7+(i*53)%(w-14);
+    const int y=top+5+(int)((i*29+millis()/280UL)%(unsigned)(span-24));
+    d.fillRect(x,y,2,2);
+  }
+}
+#endif
+
 static void drawLoRaFishBubbles(DisplayDriver& display) {
   const int h = display.height();
 
@@ -2036,6 +2165,8 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
   loRaFishClock(tb,sizeof(tb),db,sizeof(db));
 #if defined(LORAFISH_CARDPUTER_25D)
   drawCardputerTankDepth(display);
+#elif defined(LORAFISH_TDECK_PIXEL_ART)
+  drawTDeckPixelAquarium(display);
 #endif
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
   drawLoRaFishTankBattery(display,task,tb);
@@ -2266,9 +2397,11 @@ static void drawLoRaFishSleeping(DisplayDriver& display, UITask* task) {
   char tb[8], db[24];
   loRaFishClock(tb,sizeof(tb),db,sizeof(db));
 #if defined(LORAFISH_CARDPUTER_25D)
-  // Keep the same 2.5D tank visible while the local fish sleeps.
-  // Other boards retain their existing sleeping screen.
   drawCardputerTankDepth(display);
+  drawLoRaFishBubbles(display);
+#elif defined(LORAFISH_TDECK_PIXEL_ART)
+  // Sleeping fish stays inside the same aquarium as the awake fish.
+  drawTDeckPixelAquarium(display);
   drawLoRaFishBubbles(display);
 #endif
   drawLoRaFishHeader(display,loRaFishDisplayName(),tb);
