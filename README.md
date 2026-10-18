@@ -49,7 +49,7 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 | M5Stack CardPuter | cardputer_loragotchi |
 | Heltec T114 | Heltec_t114_LoRaFish_companion_ble -t create_uf2 |
 | Heltec T096 | Heltec_t096_LoRaFish_companion_ble -t create_uf2 |
-| LilyGo T-Deck | Deck_Loragotchi_dx_ble |
+| LilyGo T-Deck | TDeck_Loragotchi_dx_ble |
 
 | Untested nodes | build Environment |
 | --- | --- |
