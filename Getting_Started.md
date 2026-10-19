@@ -165,7 +165,7 @@ A new pet starts as an egg. It hatches after five minutes. The fish then progres
 - **Young**: one hour to six hours.
 - **Adult**: six hours to three days.
 - **Elder**: three days until the end of its lifespan.
-- **Memorial**: shown at seven days; use **Options → Reset pet** to start over.
+- **Memorial**: shown at seven days, followed by automatic succession to the next generation.
 
 The age clock continues while the display is off and while the fish sleeps. The aquarium animation is only a presentation; turning the display off does not pause the pet.
 
@@ -173,7 +173,23 @@ The age clock continues while the display is off and while the fish sleeps. The 
 
 When an Adult or Elder local fish is hosting an Adult or Elder visitor, **Breed with visitor** appears in Options. Long-press it to produce one egg. For each of the three traits, the offspring randomly inherits that trait from either parent; Mono is inherited like any other trait. The visitor may remain until recalled, but a second egg cannot be produced while one is pending.
 
-The egg is deliberately unmarked so its colors are not revealed. It appears as a small 🥚 indicator in the aquarium footer while the current fish lives. Generation is shown on the Stats screen. When the parent reaches the seven-day Memorial stage, the egg moves beside the gravestone on a random side. After five minutes there, it hatches into the next generation. Only the current generation and pending egg traits are saved; no family tree is retained. **Reset pet** clears a pending egg and restarts generation 1.
+If the fish reaches the end of its seven-day lifespan without an offspring egg,
+it automatically self-fertilises one. This solo egg inherits all three of the
+parent's traits, including Mono. No visitor or button press is needed. An existing
+visitor-bred egg is kept unchanged; the fallback never replaces it. Fish already
+saved on the Memorial screen without an egg recover automatically after updating.
+Visitor breeding is only available while the local parent is alive.
+
+The egg is deliberately unmarked so its colors are not revealed. A visitor-bred
+egg appears as a small 🥚 indicator in the aquarium footer while the current fish
+lives. Generation is shown on the Stats screen. At the seven-day Memorial stage,
+the offspring egg sits beside the gravestone on a random side. After five minutes
+of Memorial age, succession starts the next generation at age zero, followed by
+the normal five-minute egg stage before the fry appears. These two waits are the
+same for solo and visitor-bred eggs. An older save already past the Memorial wait
+advances on the next age tick. Only the current generation and pending egg traits
+are saved; no family tree is retained. **Reset pet** clears a pending egg and
+restarts generation 1.
 
 ### Mesh activity, meals, and hygiene
 
