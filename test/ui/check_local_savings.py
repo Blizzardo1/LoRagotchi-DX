@@ -123,7 +123,7 @@ int main() {
   assert(saves.empty());
   reboot();clearCounts();saveLoRaFish();saveLoRaFishSettings();
   assert(saves.empty());
-  assert(files["/lorafish.dat"].size()==32 && files["/lorafish.cfg"].size()==36);
+  assert(files["/lorafish.dat"].size()==32 && files["/lorafish.cfg"].size()==LORAFISH_SETTINGS_SIZE);
   pass("identical requests and canonical boot snapshots cause no file writes");
 
   beginCheck();for(int i=0;i<100;++i){message();service();}
@@ -179,7 +179,7 @@ int main() {
     clockMs=4999;service();assert(opens[path]==1);
     failOpen=shortWrite="";clockMs=5000;service();assert(opens[path]==2);
     assert(!(settings?loRaFishSettingsSaveFailed:loRaFishSaveFailed));
-    assert(files[path].size()==(settings?36:32));
+    assert(files[path].size()==(settings?LORAFISH_SETTINGS_SIZE:32));
     reboot();assert(fish.messages==0 && loRaFishTheme==0);
   }
   pass("open/short-write failures remain dirty and retry at five seconds, never loop-spin");
@@ -199,7 +199,7 @@ int main() {
 
   beginCheck();files["/lorafish.cfg"].resize(24);reboot();clearCounts();
   assert(!haveLastWrittenLoRaFishSettings);saveLoRaFishSettings();
-  assert(saves["/lorafish.cfg"]==1 && files["/lorafish.cfg"].size()==36);
+  assert(saves["/lorafish.cfg"]==1 && files["/lorafish.cfg"].size()==LORAFISH_SETTINGS_SIZE);
   pass("legacy settings are not mistaken for a fully persisted current record");
 
   beginCheck();loRaFishTimeoutAwakeSetting=5;loRaFishPoopCount=2;
@@ -213,10 +213,21 @@ int main() {
   loRaFishHappiness.awakeMs=0x10203;loRaFishHappiness.mealCooldownMs=0x20304;
   saveLoRaFishSettings();
   const std::vector<uint8_t> expected={5,2,1,3,22,6,240,4,2,1,3,2,1,3,4,5,
-      0x34,0x12,1,6,5,4,1,1,0x31,0x50,0x41,0x48,3,2,1,0,4,3,2,0};
+      0x34,0x12,1,6,5,4,1,1,0x31,0x50,0x41,0x48,3,2,1,0,4,3,2,0,
+      0x41,0x51,0x55,0x31,0,0,0,0};
   assert(files["/lorafish.cfg"]==expected);
   reboot();clearCounts();saveLoRaFishSettings();assert(saves.empty());
   pass("settings encoding retains every byte of the legacy prefix and HAP1 tail");
+
+  beginCheck();failOpen="/lorafish.cfg";
+  assert(loRaFishHappiness.aquarium(true,fish.happiness));saveLoRaFish();
+  assert(loRaFishSettingsSaveFailed && opens["/lorafish.cfg"]==1);
+  clockMs+=4999;tickLoRaFish();assert(opens["/lorafish.cfg"]==1);
+  failOpen="";clockMs++;tickLoRaFish();
+  assert(!loRaFishSettingsSaveFailed && opens["/lorafish.cfg"]==2);
+  reboot();assert(loRaFishHappiness.aquariumCooldownMs==21595000);
+  assert(!loRaFishHappiness.aquarium(true,fish.happiness));
+  pass("failed aquarium-cap save stays pending and retries once at the existing deadline");
 
   beginCheck();failOpen="/lorafish.cfg";loRaFishTheme=2;saveLoRaFishSettings();
   clockMs=0xFFFFFF00UL;loRaFishSettingsLastAttempt=(uint32_t)clockMs;

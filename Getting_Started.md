@@ -40,7 +40,8 @@ ordinary delayed age updates are saved together. LoRagotchi-controlled shutdown 
 restart flushes pending pet data. Abrupt power loss or a shared MeshCore reboot path
 can roll passive counters and timing back by up to the checkpoint interval; flash
 failures can extend that window. This is not a transactional or power-loss-safe save
-format. Existing pet and settings formats are unchanged.
+format. Pet records and the original settings prefix are preserved; an optional
+settings extension now stores the community-aquarium reward cooldown.
 
 ## Button Controls
 
@@ -96,6 +97,14 @@ The main **Options** menu is ordered as follows:
 **Breed with visitor** appears between Guess Game and Reset Pet when the local and
 visiting fish are eligible and there is no pending offspring egg. Optional rows do
 not change where Back returns from the other menus.
+
+**Send visitor home** appears after GNSS Monitor while a visitor is present.
+Hold to queue its return; opening or browsing Options sends nothing. The DX Visit
+overview shows **RETURNING VISITOR**, **RETURN DELIVERED**, or **RETURN UNCONFIRMED**.
+An unconfirmed visitor stays available for another explicit return attempt, but
+cannot be bred while its return is pending or unconfirmed. Delivery means a
+MeshCore radio acknowledgement, not an application-level confirmation of saved
+home state. A deleted owner contact must be restored before retrying.
 
 ### Editing settings
 
@@ -292,6 +301,31 @@ On the **DX Visit** overview, long-press to open the contact picker. Opening it 
 When your fish is away, open the DX picker and long-press again to recall it home. Double-click in the picker returns to the overview without sending or recalling. From the overview, short-click continues to Options and double-click returns to the aquarium, like Back from the other main screens. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
 
 Color-capable displays render visitor Scales, Body/Border, and Eyes traits independently. Mono traits use the display's foreground color; monochrome displays render every trait in their foreground color. A fish returning from a monochrome host briefly animates back into its saved home colors on a color display.
+
+### Community aquariums
+
+A compatible community receiver can capture a display copy and return the original
+fish automatically after a short stay. No Recall button press is needed. The
+aquarium can continue showing its copy after the pet comes home; the original
+device remains responsible for pet care and progress.
+
+A completed visit with an explicit community-aquarium return marker earns **+5
+Happy**, capped at 100, at most once per **six powered-on hours per device**.
+Normal tank returns do not award this bonus. Duplicates cannot repeat it, and a
+visit during cooldown is not queued for a future reward. A visit at 100 Happy
+still starts the cooldown. Eggs, memorial fish and unfinished appearance setup
+do not earn it.
+
+The cooldown counts time while awake, asleep or with the screen off, but not while
+powered off. It is saved immediately on an award, checkpointed with existing care
+timers, and retained across pet reset and generation changes. A healthy saved
+checkpoint can add up to five minutes of waiting after abrupt power loss. Storage
+failure is still subject to the existing non-transactional save limitations.
+Old settings start without an aquarium cooldown; downgrading to older firmware
+can discard this new setting when it next saves.
+
+Receiver implementers: see [COMMUNITY-RETURNS.md](COMMUNITY-RETURNS.md) for the
+backwards-compatible wire marker, identity rules, retry and snapshot behavior.
 
 ## Display and Hardware Notes
 

@@ -24,6 +24,8 @@ pre=r'''
 #include <string>
 #include <vector>
 #include "examples/companion_radio/ui-new/LoRaFishMenu.h"
+#include "examples/companion_radio/LoRaFishGuestReturn.h"
+static LoRaFishGuestReturn loragotchiDXGuestReturn;
 #include "examples/companion_radio/ui-new/AdvertMenu.h"
 #include "examples/companion_radio/ui-new/PetResetConfirmation.h"
 #include "examples/companion_radio/ui-new/LoRaFishText.h"
@@ -55,8 +57,9 @@ static uint32_t loRaFishDXContactIndex=0;
 struct {
   bool away=false,pending=false,committing=false;
   uint32_t destinationIndex=0,txid=1,fishid=2;
-  char destinationName[32]="Peer0";
+  uint8_t destinationKey[32]={};bool destinationKnown=false;char destinationName[32]="Peer0";
 } loragotchiDXHome;
+struct {bool present=false;} loragotchiDXGuest;
 static int dxWrites=0;
 static void loragotchiDXSave(){++dxWrites;}
 static bool fishSleeping=false;
@@ -73,7 +76,7 @@ static constexpr uint8_t ADV_TYPE_CHAT=1;
 struct ContactInfo {char name[32];uint32_t index;uint8_t type=ADV_TYPE_CHAT;
   struct {uint8_t pub_key[PUB_KEY_SIZE]={};} id;
 };
-struct {int sends=0,rescues=0;bool fail=false,lastFlood=false;
+struct {bool returnLoRaFishGuest(){++returnCalls;return true;}int returnCalls=0;int sends=0,rescues=0;bool fail=false,lastFlood=false;
   bool useCustom=false; std::vector<ContactInfo> custom;
   int contacts=3; int getNumContacts(){return useCustom ? (int)custom.size() : contacts;}
   bool advert(bool flood=false){if(fail)return false;++sends;lastFlood=flood;return true;}

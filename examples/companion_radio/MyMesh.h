@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "LoRaFishGuestReturn.h"
 
 
 extern float lorafish_last_rssi;
@@ -13,11 +14,15 @@ struct LoRaGotchiDXHomeState {
   bool pending=false, committing=false, away=false, returned=false;
   uint32_t txid=0, fishid=0, destinationIndex=0;
   char destinationName[32]="";
+  uint8_t destinationKey[32]={}; bool destinationKnown=false;
+  bool completedVisit=false;  // Consumed once by the care loop, even on a very short visit.
+  bool communityVisit=false;
 };
 
 // Independent visitor slot. A node can have its own fish away while hosting one guest.
 struct LoRaGotchiDXGuestState {
   bool reserved=false, present=false;
+  uint8_t ownerKey[32]={}; bool ownerKnown=false;
   uint32_t txid=0, fishid=0;
   uint8_t stage=2;
   uint8_t color=0;
@@ -31,6 +36,7 @@ struct LoRaGotchiDXGuestState {
 
 extern LoRaGotchiDXHomeState loragotchiDXHome;
 extern LoRaGotchiDXGuestState loragotchiDXGuest;
+extern LoRaFishGuestReturn loragotchiDXGuestReturn;
 extern bool loragotchiDXLocalColorCapable;
 extern bool loragotchiDXLocalHasColorGenes;
 extern uint8_t loragotchiDXLocalColorIndex;
@@ -152,6 +158,11 @@ public:
   MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store);
 
   void begin();
+#ifdef LORAFISH_UI
+  bool returnLoRaFishGuest();
+  bool acknowledgeLoRaFishGuestReturn(uint32_t hash);
+  void serviceLoRaFishGuestReturn();
+#endif
   void startInterface(BaseSerialInterface &serial);
   void setListener(Listener* listener) { _listener = listener; }
 
