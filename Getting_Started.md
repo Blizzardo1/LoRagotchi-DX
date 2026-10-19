@@ -13,7 +13,7 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 2. Start the device and connect to it from the MeshCore app as a BLE companion. Use the PIN shown on the device's pairing screen when the app requests one.
 3. Set the device clock from the app. LoRaGotchi uses MeshCore's clock for the displayed local time and scheduled sleep. If the clock has not been set to a valid date, the UI falls back to build time plus uptime; this fallback is not a substitute for setting the clock.
 4. Use **Options → Schedule & time** to set your local UTC offset and sleep/wake hours.
-5. On a color display, choose the starting Scales, Body/Border, and Eyes colors on the new-fish screen, then long-press to start. Monochrome displays skip this screen and start with monochrome traits.
+5. On a color display, select Scales, Body, or Eyes on the new-fish screen, then hold to edit that trait. Click through colors and hold to save. Finally select **Start fish** and hold. Double-click goes back without starting the fish; setup remains available under **Options → Display → Fish color**. Monochrome displays skip this screen and start with monochrome traits.
 
 Pet age, RF-event count, happiness, and other pet state are saved across restarts. Display and schedule settings are also saved. DX travel is temporary: after a reboot, the local fish returns home and any visiting-fish slot is cleared.
 
@@ -23,14 +23,17 @@ Most nodes use a single user button. Hold it for about one second for a long-pre
 
 | Gesture | General action |
 | --- | --- |
-| Short click | Advance to the next main screen, or change/select an item in a menu. |
-| Long-press | Open the selected Options item or perform the current screen's action. |
-| Double-click | Move to the next field in Schedule or Timeout; return to a parent menu on supported submenus. |
+| Short click | Next menu item, field, candidate value, or main screen. No settings are saved just by browsing. |
+| Double-click | Back to the parent menu; cancel a pending value without saving. |
+| Long-press | Select the highlighted item, save the candidate value, or perform the current screen's action. |
 | Triple-click | Toggle global buzzer quiet mode when the board has a buzzer. |
 
 During the first eight seconds after startup, long-press is reserved for MeshCore's CLI rescue gesture. After that, the LoRaGotchi menu actions are available.
 
-When the display has turned off, the first click wakes the screen. On the aquarium, long-press starts cleaning if 💩 is present.
+When the display has turned off, the first click, double-click, or long-press only wakes the screen; it does not select, save, advertise, or clean. On the aquarium, short-click always advances to Stats and long-press starts cleaning if 💩 is present.
+
+Menu footers use **1:NEXT 2:BACK L:OK** for these three gestures. The Cardputer
+keyboard uses arrows/WASD to navigate, Enter/Space to select, and Escape/Backspace to go back.
 
 The main screens advance in this order:
 
@@ -43,21 +46,39 @@ The main screens advance in this order:
 7. RF Monitor
 8. GNSS
 
-Short-click on **Options** moves the selection. Long-press opens the selected item. Short-click cycles a value within a value editor; double-click generally advances to the next field; long-press returns to the parent menu.
+Short-click on **Options** moves the selection. Long-press opens the selected item.
+In a multi-field menu, click to choose a field and hold to edit it. In its value
+picker, click through candidates and hold to save; double-click cancels the pending
+value. Returning to a parent menu keeps the relevant item highlighted. Settings
+already saved with a hold are not undone by leaving their parent menu.
 
 ## Options and Display
 
-The main **Options** menu contains:
+The main **Options** menu is ordered as follows:
 
-- **Display**: screen timeout, brightness, firmware theme, and aquarium rendering speed. Color displays also offer fish color settings.
-- **Reset pet**: opens a confirmation screen with **Cancel** selected. Nothing is reset merely by opening it. See the reset controls below.
-- **RF monitor**: view recent received signal information and activity.
-- **GNSS monitor**: inspect GNSS status; long-press toggles GNSS where supported.
-- **Schedule & time**: configure sleep, wake, and UTC offset.
-- **Guess game**: play five rounds of higher/lower to earn happiness when mesh activity is quiet.
-- **Sound**: configure buzzer volume, wake/sleep cues, and message tone on buzzer-equipped builds.
-- **Send advert**: choose a local or flood advertisement, or go Back without sending.
-- **Breed with visitor**: appears when the local fish and a visiting fish are both Adult or Elder and no offspring egg is already pending.
+1. **Send Advert**: choose a local or flood advertisement, or go Back without sending.
+2. **Guess Game**: play five rounds of higher/lower to earn happiness when mesh activity is quiet.
+3. **Reset Pet**: opens a confirmation screen with **Cancel** selected. Opening it never resets the pet.
+4. **Display**: timeout, brightness, firmware theme, aquarium rendering speed, and fish colors on color displays.
+5. **Sound**: volume and sound selections; omitted on builds without a buzzer.
+6. **Schedule and Time**: sleep hour, wake hour, and UTC offset.
+7. **RF Monitor**: recent received signal information and activity.
+8. **GNSS Monitor**: GNSS status; long-press toggles GNSS where supported.
+
+**Breed with visitor** appears between Guess Game and Reset Pet when the local and
+visiting fish are eligible and there is no pending offspring egg. Optional rows do
+not change where Back returns from the other menus.
+
+### Editing settings
+
+**Schedule and Time**, **Screen timeout**, **Sound**, and **Fish color** use field
+lists: click moves between fields without changing anything, hold opens the selected
+field's value picker, and double-click returns to the parent menu.
+
+**Brightness**, **Firmware theme**, and **Game rendering** open their value picker
+directly. For every picker, click chooses the next candidate, hold saves it and
+returns, and double-click returns without saving. Sound selections play a preview
+when saved, not while browsing. Display changes apply when saved.
 
 ### Resetting your pet safely
 
@@ -105,23 +126,31 @@ Open **Options → Guess game**. Short-click switches between **Higher** and **L
 Open **Options → Display**. Short-click selects an item and long-press opens it. Double-click returns to Options.
 
 - **Screen timeout** has independent **Fish Awake** and **Fish Asleep** settings. Each can be set to 15 seconds, 30 seconds, 1 minute, 2 minutes, 3 minutes, or Always On. The schedule determines which timeout is active.
-- **Always-On-Dim** selects when an always-on screen dims after inactivity: 15, 30, or 60 seconds. It applies when the active awake/asleep timeout is Always On. A button press restores the selected brightness.
+- **Dim after** (always-on dimming) selects when an always-on screen dims after inactivity: 15, 30, or 60 seconds. It applies when the active awake/asleep timeout is Always On. A button press restores the selected brightness.
 - **Brightness** cycles through 25%, 50%, 75%, and 100%. The default is 100%. Brightness is controlled by OLED contrast on the V4 and backlight level on color TFT targets.
 - **Firmware theme** cycles the available themes. Color TFTs have Midnight, Paper, Lagoon, and Sunset. Monochrome OLEDs use the dark and paper themes.
-- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; other screens keep their existing refresh rates. The selection is saved across restarts. Short-click changes the mode; long-press returns to Display.
+- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; other screens keep their existing refresh rates. Click chooses a candidate, hold saves it and returns to Display, and double-click cancels. The saved selection survives restarts.
 
-Fish color traits are chosen at first run or after **Reset pet**, not changed mid-generation. On the starting-trait screen, short-click cycles the current trait, double-click switches between Scales, Body/Border, and Eyes, and long-press confirms the starting fish. Color displays offer Coral, Tangerine, Gold, Mint, Lagoon, Orchid, and Mono for each trait. Monochrome displays skip the picker and begin with all three traits set to Mono.
+Color displays offer **Fish color** under Display. Click selects Scales, Body, or
+Eyes; hold opens that trait's picker. Click chooses a color, hold saves it, and
+double-click cancels. Available colors are Coral, Tangerine, Gold, Mint, Lagoon,
+Orchid, and Mono. During first-run/reset setup there is also **Start fish**, which
+must be explicitly selected with a hold; Back never completes setup. Monochrome
+displays skip the picker and begin with all three traits set to Mono.
 
 ### Sound menu
 
-On buzzer-equipped LoRaGotchi targets, open **Options → Sound**. Short-click changes the selected setting and previews non-Off choices; double-click moves to the next row; long-press returns to Options. The settings are:
+On buzzer-equipped LoRaGotchi targets, open **Options → Sound**. Click selects a
+field, hold opens its value picker, and double-click returns to Options. In the
+picker, click browses, hold saves/previews the selection, and double-click cancels.
+The settings are:
 
 - **Volume**: Off, 25%, 50%, 75%, or 100%. Volume changes the buzzer's PWM duty; triple-click remains a separate global quiet-mode toggle.
 - **Wake alarm**: Off, Chirp, Rising, or Alarm. The selected original short motif plays when the scheduled sleep state changes to awake.
 - **Sleep cue**: Off, Drift, or Soft bell. The selected motif plays when the fish enters scheduled sleep.
 - **Message tone**: Off, Ping, Double, or Arpeggio for incoming messages.
 
-The default is 100% volume, wake alarm Off, sleep cue Off, and Ping for incoming messages. The short motifs are original compositions rather than copied Nokia, Tamagotchi, or other device ringtones. Sound options are hidden on boards without a buzzer; T096 and T114 builds do not currently define buzzer hardware.
+The default is 100% volume, wake alarm Off, sleep cue Off, and Ping for incoming messages. The short motifs are original compositions rather than copied Nokia, Tamagotchi, or other device ringtones. Sound options are hidden when the build does not define buzzer hardware; the V3, V4 OLED, and T096 LoRaFish targets used here all define it.
 
 ## Pet Behavior
 
@@ -159,7 +188,7 @@ During scheduled sleep the fish displays as sleeping. RF events are still counte
 
 Open **DX Visit** to choose a compatible LoRaGotchi DX peer from the contact list. Short-click cycles through contacts. Long-press sends a visit request when the local fish is awake. The peers exchange request, acknowledgment, commit, and arrival-confirmation messages. Once accepted, the visitor appears in the other aquarium while the host fish continues its own behavior.
 
-When your fish is away, long-press recalls it home. Double-click on DX Visit opens Options. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
+When your fish is away, long-press recalls it home. Double-click on DX Visit returns to the aquarium, like Back from the other main screens. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
 
 Color-capable displays render visitor Scales, Body/Border, and Eyes traits independently. Mono traits use the display's foreground color; monochrome displays render every trait in their foreground color. A fish returning from a monochrome host briefly animates back into its saved home colors on a color display.
 
