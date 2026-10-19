@@ -70,6 +70,7 @@ struct File {
     pos += count;
     return count;
   }
+  bool seek(size_t offset) { pos=offset; return pos<=size(); }
   void close() { if (writing && path == "/lorafish.cfg") ++settingsWrites; }
 };
 struct MemoryFS {
@@ -77,7 +78,8 @@ struct MemoryFS {
     if (mode == FILE_WRITE) files[path].clear();
     return {path, 0, mode == FILE_WRITE};
   }
-  void remove(const char* path) { files.erase(path); }
+  bool exists(const char* path) { return files.count(path); }
+  bool remove(const char* path) { return files.erase(path); }
 } SPIFFS, InternalFS;
 struct {
   template<typename... Args> void printf(const char*, Args...) {}
@@ -88,6 +90,7 @@ static uint8_t loRaFishThemeCount() { return 6; }
 static void saveLoRaFishSettings();
 static void saveLoRaFish();
 static void advanceLoRaFishHappiness(uint32_t);
+static void tickLoRaFish();
 struct { bool away=false, pending=false, committing=false; } loragotchiDXHome;
 struct {
   bool present=false, colorCapable=true;
@@ -111,7 +114,10 @@ loRaFishUtcOffsetQuarters loRaFishTimeoutAsleepSetting loRaFishBrightnessSetting
 loRaFishAlwaysOnDimSetting loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound
 loRaFishMessageSound lastWrittenLoRaFish haveLastWrittenLoRaFish
 loRaFishHappiness lastWrittenLoRaFishHappiness haveLastWrittenLoRaFishHappiness
-loRaFishHappyLastMs loRaFishHappyLastSavedMs LORAFISH_HAPPY_SETTINGS_MAGIC'''.split()
+loRaFishHappyLastMs loRaFishHappyLastSavedMs LORAFISH_HAPPY_SETTINGS_MAGIC
+LORAFISH_SETTINGS_SIZE LORAFISH_CHECKPOINT_MS LORAFISH_SAVE_RETRY_MS
+lastWrittenLoRaFishSettings haveLastWrittenLoRaFishSettings
+loRaFishSettingsSaveFailed loRaFishSaveFailed loRaFishSettingsLastAttempt loRaFishLastAttempt'''.split()
 parts += [declaration(name) for name in names]
 markers = [
     'static LoRaFishAppearance loRaFishLocalAppearance(',
@@ -120,6 +126,8 @@ markers = [
     'static uint8_t inheritLoRaFishColor(',
     'static bool breedLoRaFishWithGuest(',
     'static uint8_t fishEvolutionForAge(',
+    'static void encodeLoRaFishSettings(',
+    'static bool writeLoRaFishRecord(',
     'static void saveLoRaFishSettings() {',
     'static void loadLoRaFishSettings() {',
     'static bool sameLoRaFishRecord(',
@@ -130,13 +138,15 @@ markers = [
 # Optional extraction allows running this regression against the pre-fix source.
 if 'static void ensureLoRaFishOffspring(' in SOURCE:
     markers.append('static void ensureLoRaFishOffspring(')
-markers += ['static void hatchLoRaFishOffspring(', 'static void advanceLoRaFishHappiness(uint32_t until) {', 'static void tickLoRaFish() {']
+markers += ['static void hatchLoRaFishOffspring(', 'static void advanceLoRaFishHappiness(uint32_t until) {', 'static void checkpointLoRaFish(', 'static void flushLoRaFish(', 'static void tickLoRaFish() {']
 parts += [block(marker) for marker in markers]
 parts.append(r'''
 static void resetAt(uint32_t age, bool egg=false) {
   files.clear();
   clockMs=0; fishLastMinute=fishLastSave=0;
-  haveLastWrittenLoRaFish=false;
+  haveLastWrittenLoRaFish=false; haveLastWrittenLoRaFishSettings=false;
+  loRaFishSaveFailed=loRaFishSettingsSaveFailed=false;
+  loRaFishLastAttempt=loRaFishSettingsLastAttempt=0;
   loRaFishHappiness={}; haveLastWrittenLoRaFishHappiness=false; loRaFishHappyLastMs=loRaFishHappyLastSavedMs=0;
   fish={LORAFISH_MAGIC,age,10,1,2,80,fishEvolutionForAge(age),9,20000};
   loRaFishGeneration=7; loRaFishPendingEgg=egg;
@@ -155,7 +165,9 @@ static void traits(uint8_t scales, uint8_t body, uint8_t eyes) {
 }
 static void reboot() {
   clockMs=0; fishLastMinute=fishLastSave=0;
-  haveLastWrittenLoRaFish=false;
+  haveLastWrittenLoRaFish=false; haveLastWrittenLoRaFishSettings=false;
+  loRaFishSaveFailed=loRaFishSettingsSaveFailed=false;
+  loRaFishLastAttempt=loRaFishSettingsLastAttempt=0;
   loRaFishHappiness={}; haveLastWrittenLoRaFishHappiness=false; loRaFishHappyLastMs=loRaFishHappyLastSavedMs=0;
   fish={LORAFISH_MAGIC,0,0,0,0,80,0};
   loRaFishGeneration=1; loRaFishPendingEgg=false; loRaFishEggAppearance={0,0,0};

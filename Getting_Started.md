@@ -15,7 +15,32 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 4. Use **Options → Schedule & time** to set your local UTC offset and sleep/wake hours.
 5. On a color display, select Scales, Body, or Eyes on the new-fish screen, then hold to edit that trait. Click through colors and hold to save. Finally select **Start fish** and hold. Double-click goes back without starting the fish; setup remains available under **Options → Display → Fish color**. Monochrome displays skip this screen and start with monochrome traits.
 
+Add **🐟, 🐠, 🐡, or 🦈** to your node name in the MeshCore app to opt in to
+fish-marked DX discovery. The firmware never renames you automatically. If no
+supported fish is present at boot, an advisory appears after the splash screen.
+**Short-click to dismiss**; that click does not navigate, start a visit, or change
+settings. The reminder stays dismissed for this boot and returns next boot if the
+name is still unmarked. A sleeping display's first click only wakes it. The
+first-eight-second long-press CLI rescue gesture is unchanged.
+
+Small device fonts display these four fish as `><>`. Other unsupported Unicode
+characters become spaces, and variation selectors/joiners are not printed as
+garbage bytes. This applies to the local tank name, DX target/visitor names, and
+LoRagotchi alerts. Stored names and advertised names keep their original UTF-8;
+the bounded name in a DX request also keeps complete UTF-8 characters rather than
+the display substitution. This is a simple-font fallback, not a full emoji font.
+
 Pet age, RF-event count, happiness, and other pet state are saved across restarts. Display and schedule settings are also saved. DX travel is temporary: after a reboot, the local fish returns home and any visiting-fish slot is cleared.
+
+Routine pet counters are checkpointed at most five minutes apart while the firmware
+is running and storage is working. New traffic does not postpone that deadline.
+Meals, care rewards, lifecycle transitions, completed DX visits and explicit settings
+changes still request immediate saves. Identical records are not rewritten, and
+ordinary delayed age updates are saved together. LoRagotchi-controlled shutdown or
+restart flushes pending pet data. Abrupt power loss or a shared MeshCore reboot path
+can roll passive counters and timing back by up to the checkpoint interval; flash
+failures can extend that window. This is not a transactional or power-loss-safe save
+format. Existing pet and settings formats are unchanged.
 
 ## Button Controls
 
@@ -132,7 +157,19 @@ Open **Options → Display**. Short-click selects an item and long-press opens i
 - **Dim after** (always-on dimming) selects when an always-on screen dims after inactivity: 15, 30, or 60 seconds. It applies when the active awake/asleep timeout is Always On. A button press restores the selected brightness.
 - **Brightness** cycles through 25%, 50%, 75%, and 100%. The default is 100%. Brightness is controlled by OLED contrast on the V4 and backlight level on color TFT targets.
 - **Firmware theme** cycles the available themes. Color TFTs have Midnight, Paper, Lagoon, and Sunset. Monochrome OLEDs use the dark and paper themes.
-- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; other screens keep their existing refresh rates. Click chooses a candidate, hold saves it and returns to Display, and double-click cancels. The saved selection survives restarts.
+- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; live monitors keep their existing refresh rates. Click chooses a candidate, hold saves it and returns to Display, and double-click cancels. The saved selection survives restarts.
+
+Dimming does not stop or slow animation: the selected rendering cadence stays the
+same at normal and dim brightness. A fully off display stops drawing, but pet
+simulation continues and waking draws the current state. Static menus skip redraws
+when their displayed state is unchanged; button input, alerts, wake and changed
+menu state still refresh the display.
+
+The aquarium battery icon and RF Monitor percentage share a five-second display
+cache of MeshCore's existing board-voltage reading. Calibration and the existing
+3.3–4.2 V percentage scale are unchanged. Low-battery protection still takes fresh
+readings independently. These changes reduce application work; battery-life gains
+have not been measured on hardware.
 
 Color displays offer **Fish color** under Display. Click selects Scales, Body, or
 Eyes; hold opens that trait's picker. Click chooses a color, hold saves it, and
@@ -233,6 +270,22 @@ at once on waking. Eggs and Memorial likewise do not earn meals. A sleeping fish
 cannot start a DX visit, though a fish already away can still be recalled.
 
 ## DX Visits
+
+The contact picker shows **only saved companion/chat contacts** with 🐟 (fish),
+🐠 (tropical fish), 🐡 (blowfish), or 🦈 (shark) anywhere in their raw name.
+Text/emoji presentation variants of those characters also count. Repeaters and
+room servers are excluded even if their names contain a fish. Ordinary companions
+without a marker remain in MeshCore's contacts but are hidden from this picker.
+Other sea creatures and fish-related objects such as fishing poles or fish cakes
+are not markers. A marker is an opt-in naming convention, not a firmware probe.
+
+The displayed position/count refer to matching tanks only. With none available,
+the picker says **NO FISH TANKS** and Back still works. After changing a name, send
+an advert and let the peer's contact entry update before checking its picker.
+Recalling an existing visit does not require the host to retain its marker: the
+active target is retained by public key, so renaming/reordering contacts cannot
+redirect a recall or commit retry. A deleted/unavailable target produces a notice
+instead of sending to an unrelated contact.
 
 On the **DX Visit** overview, long-press to open the contact picker. Opening it sends nothing. In the picker, short-click cycles through compatible LoRaGotchi DX peers and a separate long-press sends a visit request when the local fish is awake. The peers exchange request, acknowledgment, commit, and arrival-confirmation messages. Once accepted, the visitor appears in the other aquarium while the host fish continues its own behavior.
 
