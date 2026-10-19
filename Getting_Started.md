@@ -17,6 +17,16 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 
 Pet age, RF-event count, happiness, and other pet state are saved across restarts. Display and schedule settings are also saved. DX travel is temporary: after a reboot, the local fish returns home and any visiting-fish slot is cleared.
 
+Routine pet counters are checkpointed at most five minutes apart while the firmware
+is running and storage is working. New traffic does not postpone that deadline.
+Meals, care rewards, lifecycle transitions, completed DX visits and explicit settings
+changes still request immediate saves. Identical records are not rewritten, and
+ordinary delayed age updates are saved together. LoRagotchi-controlled shutdown or
+restart flushes pending pet data. Abrupt power loss or a shared MeshCore reboot path
+can roll passive counters and timing back by up to the checkpoint interval; flash
+failures can extend that window. This is not a transactional or power-loss-safe save
+format. Existing pet and settings formats are unchanged.
+
 ## Button Controls
 
 Most nodes use a single user button. Hold it for about one second for a long-press. A click, double-click, long-press, and triple-click have different meanings depending on the screen.
@@ -132,7 +142,19 @@ Open **Options → Display**. Short-click selects an item and long-press opens i
 - **Dim after** (always-on dimming) selects when an always-on screen dims after inactivity: 15, 30, or 60 seconds. It applies when the active awake/asleep timeout is Always On. A button press restores the selected brightness.
 - **Brightness** cycles through 25%, 50%, 75%, and 100%. The default is 100%. Brightness is controlled by OLED contrast on the V4 and backlight level on color TFT targets.
 - **Firmware theme** cycles the available themes. Color TFTs have Midnight, Paper, Lagoon, and Sunset. Monochrome OLEDs use the dark and paper themes.
-- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; other screens keep their existing refresh rates. Click chooses a candidate, hold saves it and returns to Display, and double-click cancels. The saved selection survives restarts.
+- **Game rendering** selects the aquarium redraw interval. **Smooth** uses the original 100 ms interval and is the default; **Simulation** redraws every 250 ms. This affects the aquarium only; live monitors keep their existing refresh rates. Click chooses a candidate, hold saves it and returns to Display, and double-click cancels. The saved selection survives restarts.
+
+Dimming does not stop or slow animation: the selected rendering cadence stays the
+same at normal and dim brightness. A fully off display stops drawing, but pet
+simulation continues and waking draws the current state. Static menus skip redraws
+when their displayed state is unchanged; button input, alerts, wake and changed
+menu state still refresh the display.
+
+The aquarium battery icon and RF Monitor percentage share a five-second display
+cache of MeshCore's existing board-voltage reading. Calibration and the existing
+3.3–4.2 V percentage scale are unchanged. Low-battery protection still takes fresh
+readings independently. These changes reduce application work; battery-life gains
+have not been measured on hardware.
 
 Color displays offer **Fish color** under Display. Click selects Scales, Body, or
 Eyes; hold opens that trait's picker. Click chooses a color, hold saves it, and

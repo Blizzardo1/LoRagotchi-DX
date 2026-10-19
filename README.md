@@ -22,6 +22,12 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 - Higher/Lower game - 5 rounds; each correct guess adds 1 Happy (max +5 per game)
 
 ## Testing features:
+- LoRagotchi-local flash and display savings
+    - Five-minute passive-counter checkpoints; immediate care/lifecycle/settings saves
+    - Identical-record suppression and bounded retries after failed file writes
+    - Shared five-second battery display cache using MeshCore's existing readings
+    - Unchanged static menus skip redraws; dimmed animation keeps its normal cadence
+    - Shared MeshCore, radio, board power configuration and save formats unchanged
 - Lifecycle improvements, basic fish-colour DNA, breeding & self-fertilization
     - Your fish now has generations > everyone starts with a 1st gen fish. old-age death no longer ends the LoRagotchi game
     - Your game will ask for what colour your fish should start as. breeding can evolve the fish.

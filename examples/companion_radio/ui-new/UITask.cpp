@@ -19,6 +19,7 @@ class LoRaFishNVSFile {
   bool writable=false;
   bool opened=false;
   const char* key;
+  bool saved = true;
 public:
   LoRaFishNVSFile(const char* record, bool write):writable(write),key(record) {
     opened=prefs.begin("lfgfish", !write);
@@ -47,15 +48,17 @@ public:
     cursor+=count;
     return (int)count;
   }
-  void close() {
-    if (!opened) return;
+  bool close() {
+    if (!opened) return saved;
     if (writable) {
       size_t written=prefs.putBytes(key,bytes.data(),bytes.size());
+      saved = written == bytes.size();
       Serial.printf("[LFG NVS] save %s %u/%u bytes %s\n",key,(unsigned)written,(unsigned)bytes.size(),written==bytes.size()?"OK":"FAILED");
     } else {
       Serial.printf("[LFG NVS] read %s %u bytes\n",key,(unsigned)bytes.size());
     }
     prefs.end(); opened=false;
+    return saved;
   }
 };
 #endif
@@ -706,54 +709,88 @@ static const char* fishStageName() {
   }
 }
 
-static void saveLoRaFishSettings() {
+// Same 24-byte settings prefix and 12-byte HAP1 tail; no disk-format change.
+static constexpr size_t LORAFISH_SETTINGS_SIZE = 36;
+static constexpr uint32_t LORAFISH_CHECKPOINT_MS = 5UL * 60000UL;
+static constexpr uint32_t LORAFISH_SAVE_RETRY_MS = 5000UL;
+static uint8_t lastWrittenLoRaFishSettings[LORAFISH_SETTINGS_SIZE];
+static bool haveLastWrittenLoRaFishSettings = false;
+static bool loRaFishSettingsSaveFailed = false;
+static bool loRaFishSaveFailed = false;
+static uint32_t loRaFishSettingsLastAttempt = 0;
+static uint32_t loRaFishLastAttempt = 0;
+
+static void encodeLoRaFishSettings(uint8_t* data) {
+  const uint8_t prefix[] = {
+      loRaFishTimeoutAwakeSetting, loRaFishPoopCount, loRaFishTheme, loRaFishColor,
+      loRaFishSleepHour, loRaFishWakeHour, (uint8_t)loRaFishUtcOffsetQuarters,
+      loRaFishTimeoutAsleepSetting, loRaFishBrightnessSetting, loRaFishAlwaysOnDimSetting,
+      loRaFishBuzzerVolume, loRaFishWakeSound, loRaFishSleepSound, loRaFishMessageSound,
+      loRaFishScaleColor, loRaFishEyeColor};
+  memcpy(data, prefix, sizeof(prefix));
+  memcpy(data + 16, &loRaFishGeneration, 2);
+  data[18] = loRaFishPendingEgg ? 1 : 0;
+  data[19] = loRaFishEggAppearance.scales;
+  data[20] = loRaFishEggAppearance.body;
+  data[21] = loRaFishEggAppearance.eyes;
+  data[22] = loRaFishNeedsAppearanceSetup ? 1 : 0;
+  data[23] = loRaFishSimulationMode ? 1 : 0;
+  memcpy(data + 24, &LORAFISH_HAPPY_SETTINGS_MAGIC, 4);
+  memcpy(data + 28, &loRaFishHappiness.awakeMs, 4);
+  memcpy(data + 32, &loRaFishHappiness.mealCooldownMs, 4);
+}
+
+static bool writeLoRaFishRecord(const char* path, const uint8_t* data, size_t size) {
 #if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
-  LoRaFishNVSFile f("cfg", true);
+  LoRaFishNVSFile f(strcmp(path, "/lorafish.cfg") == 0 ? "cfg" : "state", true);
 #elif defined(ESP32)
-  File f = SPIFFS.open("/lorafish.cfg", FILE_WRITE);
+  File f = SPIFFS.open(path, FILE_WRITE);
 #elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  InternalFS.remove("/lorafish.cfg");
-  File f = InternalFS.open("/lorafish.cfg", FILE_O_WRITE);
+  // Adafruit FILE_O_WRITE appends: retain replacement, not append-to-old-record.
+  if (InternalFS.exists(path) && !InternalFS.remove(path)) return false;
+  File f = InternalFS.open(path, FILE_O_WRITE);
 #else
-  File f;
+  return false;
 #endif
 #if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  if (f) {
-    f.write(&loRaFishTimeoutAwakeSetting, 1);
-    f.write(&loRaFishPoopCount, 1);
-    f.write(&loRaFishTheme, 1);
-    f.write(&loRaFishColor, 1);
-    f.write(&loRaFishSleepHour, 1);
-    f.write(&loRaFishWakeHour, 1);
-    f.write((const uint8_t*)&loRaFishUtcOffsetQuarters, 1);
-    f.write(&loRaFishTimeoutAsleepSetting, 1);
-    f.write(&loRaFishBrightnessSetting, 1);
-    f.write(&loRaFishAlwaysOnDimSetting, 1);
-    f.write(&loRaFishBuzzerVolume, 1);
-    f.write(&loRaFishWakeSound, 1);
-    f.write(&loRaFishSleepSound, 1);
-    f.write(&loRaFishMessageSound, 1);
-    f.write(&loRaFishScaleColor, 1);
-    f.write(&loRaFishEyeColor, 1);
-    f.write((const uint8_t*)&loRaFishGeneration, sizeof(loRaFishGeneration));
-    f.write((uint8_t)(loRaFishPendingEgg ? 1 : 0));
-    f.write(&loRaFishEggAppearance.scales, 1);
-    f.write(&loRaFishEggAppearance.body, 1);
-    f.write(&loRaFishEggAppearance.eyes, 1);
-    f.write((uint8_t)(loRaFishNeedsAppearanceSetup ? 1 : 0));
-    f.write((uint8_t)(loRaFishSimulationMode ? 1 : 0));
-    f.write((const uint8_t*)&LORAFISH_HAPPY_SETTINGS_MAGIC, sizeof(LORAFISH_HAPPY_SETTINGS_MAGIC));
-    f.write((const uint8_t*)&loRaFishHappiness.awakeMs, sizeof(loRaFishHappiness.awakeMs));
-    f.write((const uint8_t*)&loRaFishHappiness.mealCooldownMs, sizeof(loRaFishHappiness.mealCooldownMs));
-    f.close();
-    lastWrittenLoRaFishHappiness = loRaFishHappiness;
-    haveLastWrittenLoRaFishHappiness = true;
-    loRaFishHappyLastSavedMs = millis();
-  }
+  if (!f) return false;
+  bool complete = f.write(data, size) == size;
+#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
+  complete = f.close() && complete;
+#else
+  f.close(); // These APIs return void: byte-count success is not power-loss atomicity.
+#endif
+  return complete;
 #endif
 }
 
+static void saveLoRaFishSettings() {
+  const uint32_t now = millis();
+  if (loRaFishSettingsSaveFailed &&
+      now - loRaFishSettingsLastAttempt < LORAFISH_SAVE_RETRY_MS) return;
+  uint8_t data[LORAFISH_SETTINGS_SIZE];
+  encodeLoRaFishSettings(data);
+  if (!loRaFishSettingsSaveFailed && haveLastWrittenLoRaFishSettings &&
+      memcmp(data, lastWrittenLoRaFishSettings, sizeof(data)) == 0) {
+    loRaFishHappyLastSavedMs = now;
+    return;
+  }
+  loRaFishSettingsLastAttempt = now;
+  if (!writeLoRaFishRecord("/lorafish.cfg", data, sizeof(data))) {
+    loRaFishSettingsSaveFailed = true;
+    return;
+  }
+  memcpy(lastWrittenLoRaFishSettings, data, sizeof(data));
+  haveLastWrittenLoRaFishSettings = true;
+  loRaFishSettingsSaveFailed = false;
+  lastWrittenLoRaFishHappiness = loRaFishHappiness;
+  haveLastWrittenLoRaFishHappiness = true;
+  loRaFishHappyLastSavedMs = now;
+}
+
 static void loadLoRaFishSettings() {
+  haveLastWrittenLoRaFishSettings = false;
+  loRaFishSettingsSaveFailed = false;
   loRaFishHappiness = {};
   haveLastWrittenLoRaFishHappiness = false;
   loRaFishHappyLastMs = loRaFishHappyLastSavedMs = millis();
@@ -851,6 +888,15 @@ static void loadLoRaFishSettings() {
       lastWrittenLoRaFishHappiness = happy;
       haveLastWrittenLoRaFishHappiness = true;
     }
+    uint8_t canonical[LORAFISH_SETTINGS_SIZE];
+    encodeLoRaFishSettings(canonical);
+#if !defined(LORAFISH_TDECK_NVS)
+    if (f.size() == sizeof(canonical) && f.seek(0) &&
+        f.read(lastWrittenLoRaFishSettings, sizeof(canonical)) == sizeof(canonical)) {
+      haveLastWrittenLoRaFishSettings =
+          memcmp(canonical, lastWrittenLoRaFishSettings, sizeof(canonical)) == 0;
+    }
+#endif
     f.close();
   }
 #endif
@@ -868,46 +914,35 @@ static LoRaFishState lastWrittenLoRaFish;
 static bool haveLastWrittenLoRaFish = false;
 
 static void saveLoRaFish() {
-  // Save new meals/decay immediately, and elapsed timing at five-minute
-  // checkpoints. RF messages also save the pet: do not rewrite settings for
-  // every packet just because a few milliseconds of timing have elapsed.
+  // Care/transitions call this immediately; routine counters use a fixed maximum
+  // checkpoint age. Only elapsed Happy timing waits for the five-minute checkpoint.
   const bool timingChanged = !loRaFishHappiness.same(lastWrittenLoRaFishHappiness);
   if (!haveLastWrittenLoRaFishHappiness || (timingChanged &&
       (loRaFishHappiness.mealCooldownMs > lastWrittenLoRaFishHappiness.mealCooldownMs ||
        loRaFishHappiness.awakeMs < lastWrittenLoRaFishHappiness.awakeMs ||
        (uint32_t)(millis() - loRaFishHappyLastSavedMs) >= 5UL*60000UL)))
     saveLoRaFishSettings();
-  // Skip identical writes. Flash has limited erase cycles, and this also
-  // stops the same record being written twice in one save cycle.
-  if (haveLastWrittenLoRaFish && sameLoRaFishRecord(lastWrittenLoRaFish, fish)) {
-    fishLastSave = millis();
+  const uint32_t now = millis();
+  if (loRaFishSaveFailed && now - loRaFishLastAttempt < LORAFISH_SAVE_RETRY_MS) return;
+  if (!loRaFishSaveFailed && haveLastWrittenLoRaFish &&
+      sameLoRaFishRecord(lastWrittenLoRaFish, fish)) {
+    fishLastSave = now;
     return;
   }
-#if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
-  LoRaFishNVSFile f("state", true);
-#elif defined(ESP32)
-  File f = SPIFFS.open("/lorafish.dat", FILE_WRITE);
-#elif defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  InternalFS.remove("/lorafish.dat");
-  File f = InternalFS.open("/lorafish.dat", FILE_O_WRITE);
-#else
-  File f;
-#endif
-#if defined(ESP32) || defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  if (f) {
-    f.write((const uint8_t*)&fish, sizeof(fish));
-    f.close();
-    lastWrittenLoRaFish = fish;
-    haveLastWrittenLoRaFish = true;
-    Serial.printf("[LFG2] saved age=%lu rf=%lu visits=%lu longestUp=%lu\n",
-                  (unsigned long)fish.ageMinutes,(unsigned long)fish.rfEvents,
-                  (unsigned long)fish.dxVisits,(unsigned long)fish.longestUptimeMinutes);
+  loRaFishLastAttempt = now;
+  if (!writeLoRaFishRecord("/lorafish.dat", (const uint8_t*)&fish, sizeof(fish))) {
+    loRaFishSaveFailed = true;
+    return;
   }
-#endif
-  fishLastSave = millis();
+  loRaFishSaveFailed = false;
+  lastWrittenLoRaFish = fish;
+  haveLastWrittenLoRaFish = true;
+  fishLastSave = now;
 }
 
 static void loadLoRaFish() {
+  haveLastWrittenLoRaFish = false;
+  loRaFishSaveFailed = false;
   bool restored=false;
 #if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
   LoRaFishNVSFile f("state", false);
@@ -934,6 +969,8 @@ static void loadLoRaFish() {
     if (f.read((uint8_t*)&tmp, sizeof(tmp)) == sizeof(tmp) &&
         tmp.magic == LORAFISH_MAGIC) {
       fish = tmp;
+      lastWrittenLoRaFish = tmp;
+      haveLastWrittenLoRaFish = true;
       restored=true;
     }
     f.close();
@@ -1011,12 +1048,28 @@ static void advanceLoRaFishHappiness(uint32_t until) {
   loRaFishHappyLastMs = until;
 }
 
+static void checkpointLoRaFish(uint32_t now) {
+  if (loRaFishSettingsSaveFailed ||
+      now - loRaFishHappyLastSavedMs >= LORAFISH_CHECKPOINT_MS) saveLoRaFishSettings();
+  if (loRaFishSaveFailed || now - fishLastSave >= LORAFISH_CHECKPOINT_MS) saveLoRaFish();
+}
+
+// Only LoRagotchi-controlled shutdown/restart. Shared MeshCore reboot paths stay unchanged.
+static void flushLoRaFish() {
+  tickLoRaFish();
+  // One final attempt even if a previous failure is inside the retry backoff.
+  loRaFishSettingsLastAttempt = loRaFishLastAttempt = millis() - LORAFISH_SAVE_RETRY_MS;
+  saveLoRaFishSettings();
+  saveLoRaFish();
+}
+
 static void tickLoRaFish() {
   const uint32_t now = millis();
   const uint8_t previousHappiness = fish.happiness;
   if (loRaFishNeedsAppearanceSetup) {
     advanceLoRaFishHappiness(now);
     fishLastMinute=now;
+    checkpointLoRaFish(now);
     return;
   }
   const uint32_t uptimeMinutes = now / 60000UL;
@@ -1040,11 +1093,15 @@ static void tickLoRaFish() {
       hatchLoRaFishOffspring();
       break;
     }
-    if ((fish.ageMinutes % 5) == 0) saveLoRaFish();
+    // Persist real lifecycle boundaries immediately; ordinary catch-up saves
+    // are coalesced after the loop, not one write per historical five minutes.
+    if (fish.ageMinutes == LORAFISH_EGG_MINUTES ||
+        fish.ageMinutes == LORAFISH_LIFESPAN_MINUTES ||
+        fish.evolution != previousEvolution) saveLoRaFish();
   }
   advanceLoRaFishHappiness(now);
-  if (fish.happiness != previousHappiness || now - fishLastSave >= 15UL*60UL*1000UL)
-    saveLoRaFish();
+  if (fish.happiness != previousHappiness) saveLoRaFish();
+  checkpointLoRaFish(now);
 }
 
 static void reactLoRaFish(uint8_t reaction) {
@@ -1631,6 +1688,20 @@ static void drawLoRaFishHeader(DisplayDriver& display, const char* title,
   display.fillRect(2,15,w-4,1);
 }
 
+static bool loRaFishBatteryValid = false;
+static uint32_t loRaFishBatterySampledAt = 0;
+static uint16_t loRaFishBatteryMilliVolts = 0;
+
+static uint16_t loRaFishDisplayBattery(UITask* task) {
+  const uint32_t now = millis();
+  if (!loRaFishBatteryValid || now - loRaFishBatterySampledAt >= 5000UL) {
+    loRaFishBatteryMilliVolts = task->getBattMilliVolts();
+    loRaFishBatterySampledAt = now;
+    loRaFishBatteryValid = true;
+  }
+  return loRaFishBatteryMilliVolts;
+}
+
 // Compact battery icon immediately to the left of the aquarium clock.
 // Uses the same 3.3-4.2 V percentage mapping as the RF monitor.
 static void drawLoRaFishTankBattery(DisplayDriver& display, UITask* task,
@@ -1640,7 +1711,7 @@ static void drawLoRaFishTankBattery(DisplayDriver& display, UITask* task,
   const int clockWidth = (int)strlen(clockText) * 6; // default text size 1
   const int x = w - 2 - clockWidth - 21;
   if (x < 0) return;
-  const uint16_t mv = task->getBattMilliVolts();
+  const uint16_t mv = loRaFishDisplayBattery(task);
   const int pct = constrain(((int)mv - 3300) * 100 / 900, 0, 100);
   display.setColor(UIColor::primary_txt);
   display.drawRect(x, 5, 15, 8);
@@ -2135,7 +2206,7 @@ static void drawLoRaFishRFMonitor(DisplayDriver& display, UITask* task) {
   }
 
   char right[16];
-  uint16_t mv=task->getBattMilliVolts();
+  uint16_t mv=loRaFishDisplayBattery(task);
   int batt=(int)((mv-3300L)*100L/(4200L-3300L));
   batt=constrain(batt,0,100);
   snprintf(right,sizeof(right),"BAT %d%%",batt);
@@ -3608,7 +3679,7 @@ void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_det
 void UITask::handleLoRaFishMessage() {
   fish.messages++;
   reactLoRaFish(1);
-  saveLoRaFish();
+  // Passive counters stay in RAM until the next checkpoint or immediate care save.
   gotoHomeScreen();
 
   if (_display != NULL && _display->isOn()) {
@@ -3671,6 +3742,9 @@ void UITask::setCurrScreen(UIScreen* c) {
   hardware-agnostic pre-shutdown activity should be done here
 */
 void UITask::shutdown(bool restart){
+#ifdef LORAFISH_UI
+  flushLoRaFish();
+#endif
 
   #ifdef PIN_BUZZER
   /* note: we have a choice here -
@@ -3703,6 +3777,43 @@ bool UITask::isButtonPressed() const {
   return false;
 #endif
 }
+
+#ifdef LORAFISH_UI
+static bool loRaFishStaticFrameValid = false;
+static uint8_t loRaFishStaticFrame[42];
+
+static bool shouldRenderLoRaFish(bool homeVisible, bool alertVisible, bool forced) {
+  // Only genuinely static menu pages. Aquarium (even sleeping/dimmed), Stats,
+  // clock, pairing, DX and RF/GNSS retain their existing refresh cadence.
+  const bool staticPage = loRaFishPage == 5 || (loRaFishPage >= 8 && loRaFishPage <= 18);
+  if (!homeVisible || alertVisible || !staticPage) {
+    loRaFishStaticFrameValid = false;
+    return true;
+  }
+  uint8_t settings[LORAFISH_SETTINGS_SIZE];
+  encodeLoRaFishSettings(settings);
+  uint8_t frame[] = {
+      loRaFishPage, (uint8_t)loRaFishOption, loRaFishDisplayOption, loRaFishTimeField,
+      loRaFishTimeoutField, loRaFishSoundField, loRaFishColorField,
+      (uint8_t)loRaFishValuePicker.active(), (uint8_t)loRaFishValuePicker.key(),
+      loRaFishValuePicker.value(), (uint8_t)loRaFishCanBreed(),
+      (uint8_t)loRaFishResetConfirmation.resetSelected(), (uint8_t)loRaFishAdvertMenu.selected(),
+      loRaFishGuessNumber, loRaFishGuessPrevious, loRaFishGuessRounds, loRaFishGuessScore,
+      (uint8_t)loRaFishGuessHigher, (uint8_t)loRaFishGuessResultShown,
+      (uint8_t)loRaFishGuessCorrect, (uint8_t)loRaFishGuessComplete,
+      (uint8_t)loRaFishColorDisplay,
+      // UI settings only: elapsed Happy timers must not dirty a static frame.
+      settings[0], settings[2], settings[3], settings[4], settings[5], settings[6],
+      settings[7], settings[8], settings[9], settings[10], settings[11], settings[12],
+      settings[13], settings[14], settings[15], settings[22], settings[23]};
+  static_assert(sizeof(frame) <= sizeof(loRaFishStaticFrame), "static frame key capacity");
+  const bool changed = forced || !loRaFishStaticFrameValid ||
+      memcmp(frame, loRaFishStaticFrame, sizeof(frame)) != 0;
+  memcpy(loRaFishStaticFrame, frame, sizeof(frame));
+  loRaFishStaticFrameValid = true;
+  return changed;
+}
+#endif
 
 // Alert popup, drawn over whatever page is showing. Used by both the full-frame
 // and the banded render paths.
@@ -3947,6 +4058,9 @@ void UITask::loop() {
 
   if (curr) curr->poll();
 
+#ifdef LORAFISH_UI
+  if (!_display || !_display->isOn()) loRaFishStaticFrameValid = false;
+#endif
   if (_display != NULL && _display->isOn()) {
 #ifdef LORAFISH_UI
     const bool sleeping=loRaFishIsSleeping();
@@ -3965,6 +4079,10 @@ void UITask::loop() {
     if (shouldDim!=loRaFishScreenDimmed) {
       loRaFishScreenDimmed=shouldDim;
       applyLoRaFishBrightness(*_display,shouldDim);
+    }
+    if (millis() >= _next_refresh && curr &&
+        !shouldRenderLoRaFish(curr == home, millis() < _alert_expiry, _next_refresh == 0)) {
+      _next_refresh = millis() + 2000;
     }
 #endif
     if (millis() >= _next_refresh && curr) {
