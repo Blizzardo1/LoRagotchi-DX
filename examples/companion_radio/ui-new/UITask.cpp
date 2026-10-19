@@ -372,6 +372,7 @@ static bool loRaFishCanBreed() {
 #ifdef LORAFISH_UI
   return !loRaFishPendingEgg && !loragotchiDXHome.away &&
       !loragotchiDXHome.pending && !loragotchiDXHome.committing &&
+      fish.ageMinutes < LORAFISH_LIFESPAN_MINUTES &&
       loragotchiDXGuest.present && fish.evolution>=2 && loragotchiDXGuest.stage>=2;
 #else
   return false;
@@ -899,6 +900,16 @@ static void loadLoRaFish() {
       ((fish.rfEvents / LORAFISH_PACKETS_PER_FEED) + 1) * LORAFISH_PACKETS_PER_FEED;
 }
 
+static void ensureLoRaFishOffspring() {
+  if (fish.ageMinutes < LORAFISH_LIFESPAN_MINUTES || loRaFishPendingEgg) return;
+  // Self-fertilise only when no visitor-bred egg exists. With a single parent,
+  // all three inherited traits are its own, including Mono.
+  loRaFishEggAppearance=loRaFishLocalAppearance();
+  loRaFishPendingEgg=true;
+  loRaFishMemorialEggSide=0;
+  saveLoRaFishSettings();
+}
+
 static void hatchLoRaFishOffspring() {
   if (!loRaFishPendingEgg) return;
   // DX visits and uptime records belong to the device, so they survive a hatch.
@@ -937,6 +948,8 @@ static void tickLoRaFish() {
   }
   const uint32_t uptimeMinutes = now / 60000UL;
   if (uptimeMinutes > fish.longestUptimeMinutes) fish.longestUptimeMinutes = uptimeMinutes;
+  // Also recover pets saved on the memorial by firmware without the fallback.
+  ensureLoRaFishOffspring();
   while (now - fishLastMinute >= 60000UL) {
     fishLastMinute += 60000UL;
     fish.ageMinutes++;
@@ -947,6 +960,7 @@ static void tickLoRaFish() {
     if (fish.ageMinutes == LORAFISH_EGG_MINUTES) {
       loRaFishHatchMelodyPlayed = false; // UITask::loop will play it once.
     }
+    ensureLoRaFishOffspring();
     if (loRaFishPendingEgg &&
         fish.ageMinutes >= LORAFISH_LIFESPAN_MINUTES + LORAFISH_EGG_MINUTES) {
       hatchLoRaFishOffspring();
