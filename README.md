@@ -19,16 +19,18 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 - MeshCore remains the underlying radio/mesh transport
 - Buzzer support
 - Colour screen support
-- Higher/Lower game - 5 rounds. each win = 1 happy at the end of the game (Max +5 happy)
+- Higher/Lower game - 5 rounds; each correct guess adds 1 Happy (max +5 per game)
 
 ## Testing features:
 - Lifecycle improvements, basic fish-colour DNA, breeding & self-fertilization
     - Your fish now has generations > everyone starts with a 1st gen fish. old-age death no longer ends the LoRagotchi game
     - Your game will ask for what colour your fish should start as. breeding can evolve the fish.
 - happiness re-balance
-    - Fixed double-tap for happiness from an RF message
-    - Added basic time drain
-    - Added pooped-in-tank drain.
+    - RF interactions count toward meals, without a direct Happy bonus
+    - +3 Happy per ten-event meal, limited to one meal per hour; no queued backlog
+    - -1 Happy per 30 awake minutes, plus -1 per waste piece at the same interval
+    - Scheduled sleep, eggs and Memorial pause decay; turning the screen off does not
+    - Cleaning stays +3; new generations start at 80; Happy stays between 0 and 100
 - M2 Partition change - dropped 2nd app partition in favour of a larger primary app partition.
     - alleviates flash from 95.5% to about 42%, in line with other nodes.
     - retained NVS, Filesystem and Coredump partitions.

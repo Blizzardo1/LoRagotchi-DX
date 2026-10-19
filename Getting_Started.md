@@ -193,15 +193,44 @@ restarts generation 1.
 
 ### Mesh activity, meals, and hygiene
 
-MeshCore interactions such as received messages, acknowledgments, and new contacts contribute to the RF-event counter. Each group of ten events earns a meal while the fish is awake. Meals increase happiness and schedule waste to appear 30 to 90 seconds later. Happiness is capped at 100. The buzzer, when fitted and enabled, provides hatch, feeding, and cleaning sounds.
+MeshCore interactions such as received messages, acknowledgments, and contact
+discoveries contribute to the RF-event counter, but no longer add happiness
+directly. Each group of ten events offers a meal while the living fish is awake.
+A credited meal adds **3 Happy**, schedules waste to appear 30 to 90 seconds later,
+and starts a **one-hour cooldown**. Only credited meals play eating sounds and
+animations. Events still count during the cooldown, but meal thresholds reached
+then are consumed: they do not queue meals for later. After the cooldown, a new
+ten-event threshold is needed. The cooldown counts powered-on time, including
+scheduled sleep; powering off does not advance it.
 
-Waste accumulates up to three pieces. To clean the tank, long-press while on the aquarium screen. Cleaning clears the waste and adds a small happiness bonus. Cleaning is available only when waste is present.
+Happy loses **1 point per 30 awake minutes**, plus **1 extra point for each waste
+piece** present at that interval. Waste caps at three, so a clean tank loses one
+point per half-hour and a full dirty tank loses four. Scheduled sleep, appearance
+setup, the egg stage and Memorial do not accumulate decay. The partial awake
+interval resumes after sleep; switching off the display does not pause care.
+
+To clean a nonempty tank, long-press on the aquarium screen. Completed cleaning
+clears all waste and adds **3 Happy**. Each correct Guess Game answer still adds
+one point, up to five per game; wrong answers do not subtract points. Happy stays
+between **0 and 100** and does not change lifespan, evolution or breeding rules.
+New/reset fish and each new generation start at 80.
+
+Existing pet saves upgrade without a reset. Decay progress and meal cooldown are
+saved at care events and approximately five-minute checkpoints; an abrupt restart
+can replay unsaved time, as with pet age. Saved timers resume after reboot, with
+no powered-off decay. Resetting the pet or starting the next generation clears
+both timers. Older firmware can still read the original pet/settings fields, but
+does not maintain the new timing data if it rewrites settings.
 
 ### Sleep schedule
 
 The default schedule is sleep at 21:00 and wake at 07:00. Sleep and wake are based on the device clock plus the manually configured UTC offset. Offset increments are 15 minutes, from UTC-12:00 through UTC+14:00. There is no automatic timezone or daylight-saving detection; update the offset when local rules change. Setting sleep and wake to the same hour keeps the fish awake all day.
 
-During scheduled sleep the fish displays as sleeping. RF events are still counted, but meal thresholds reached while asleep are consumed without feeding, so meals do not accumulate and trigger all at once on waking. A sleeping fish cannot start a DX visit, though a fish already away can still be recalled.
+During scheduled sleep the fish displays as sleeping. Happy decay pauses, and RF
+events are still counted without adding Happy. Meal thresholds reached while
+asleep are consumed without feeding, so meals do not accumulate and trigger all
+at once on waking. Eggs and Memorial likewise do not earn meals. A sleeping fish
+cannot start a DX visit, though a fish already away can still be recalled.
 
 ## DX Visits
 

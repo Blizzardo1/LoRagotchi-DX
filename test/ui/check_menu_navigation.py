@@ -39,6 +39,7 @@ static bool canBreed=false;
 static bool loRaFishCanBreed(){return canBreed;}
 static void saveLoRaFishSettings(){++settingsWrites;}
 static void saveLoRaFish(){++petWrites;}
+static void tickLoRaFish(){}
 static void loRaFishSyncDXAppearance(){}
 static void applyLoRaFishTheme(){}
 static void startLoRaFishCleaning(){++cleans;}

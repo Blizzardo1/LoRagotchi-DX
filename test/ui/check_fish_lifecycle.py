@@ -36,6 +36,7 @@ parts = [r'''
 #include <map>
 #include <string>
 #include <vector>
+#include "examples/companion_radio/ui-new/LoRaFishHappiness.h"
 using std::min;
 #define LORAFISH_UI 1
 #define FILE_READ 0
@@ -43,7 +44,9 @@ using std::min;
 #define FILE_O_READ FILE_READ
 #define FILE_O_WRITE FILE_WRITE
 static unsigned long clockMs = 0;
-unsigned long millis() { return clockMs; }
+unsigned long millis() { return (uint32_t)clockMs; }
+static int64_t localEpochBase=43200;
+static int64_t loRaFishLocalEpoch() { return localEpochBase + clockMs/1000; }
 static long randomChoice = 0;
 long random(long lo, long) { return lo + randomChoice; }
 static int settingsWrites = 0;
@@ -84,6 +87,7 @@ static void loRaFishSyncDXAppearance() {}
 static uint8_t loRaFishThemeCount() { return 6; }
 static void saveLoRaFishSettings();
 static void saveLoRaFish();
+static void advanceLoRaFishHappiness(uint32_t);
 struct { bool away=false, pending=false, committing=false; } loragotchiDXHome;
 struct {
   bool present=false, colorCapable=true;
@@ -105,7 +109,9 @@ loRaFishColorField loRaFishColorDisplay loRaFishAppearanceLoaded loRaFishSimulat
 loRaFishTimeoutAwakeSetting loRaFishTheme loRaFishSleepHour loRaFishWakeHour
 loRaFishUtcOffsetQuarters loRaFishTimeoutAsleepSetting loRaFishBrightnessSetting
 loRaFishAlwaysOnDimSetting loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound
-loRaFishMessageSound lastWrittenLoRaFish haveLastWrittenLoRaFish'''.split()
+loRaFishMessageSound lastWrittenLoRaFish haveLastWrittenLoRaFish
+loRaFishHappiness lastWrittenLoRaFishHappiness haveLastWrittenLoRaFishHappiness
+loRaFishHappyLastMs loRaFishHappyLastSavedMs LORAFISH_HAPPY_SETTINGS_MAGIC'''.split()
 parts += [declaration(name) for name in names]
 markers = [
     'static LoRaFishAppearance loRaFishLocalAppearance(',
@@ -124,13 +130,14 @@ markers = [
 # Optional extraction allows running this regression against the pre-fix source.
 if 'static void ensureLoRaFishOffspring(' in SOURCE:
     markers.append('static void ensureLoRaFishOffspring(')
-markers += ['static void hatchLoRaFishOffspring(', 'static void tickLoRaFish(']
+markers += ['static void hatchLoRaFishOffspring(', 'static void advanceLoRaFishHappiness(uint32_t until) {', 'static void tickLoRaFish() {']
 parts += [block(marker) for marker in markers]
 parts.append(r'''
 static void resetAt(uint32_t age, bool egg=false) {
   files.clear();
   clockMs=0; fishLastMinute=fishLastSave=0;
   haveLastWrittenLoRaFish=false;
+  loRaFishHappiness={}; haveLastWrittenLoRaFishHappiness=false; loRaFishHappyLastMs=loRaFishHappyLastSavedMs=0;
   fish={LORAFISH_MAGIC,age,10,1,2,80,fishEvolutionForAge(age),9,20000};
   loRaFishGeneration=7; loRaFishPendingEgg=egg;
   loRaFishEggAppearance={1,2,3}; loRaFishNeedsAppearanceSetup=false;
@@ -149,12 +156,13 @@ static void traits(uint8_t scales, uint8_t body, uint8_t eyes) {
 static void reboot() {
   clockMs=0; fishLastMinute=fishLastSave=0;
   haveLastWrittenLoRaFish=false;
+  loRaFishHappiness={}; haveLastWrittenLoRaFishHappiness=false; loRaFishHappyLastMs=loRaFishHappyLastSavedMs=0;
   fish={LORAFISH_MAGIC,0,0,0,0,80,0};
   loRaFishGeneration=1; loRaFishPendingEgg=false; loRaFishEggAppearance={0,0,0};
   loRaFishColor=loRaFishScaleColor=loRaFishEyeColor=0;
   loadLoRaFish(); loadLoRaFishSettings();
 }
-static void pass(const char* name) { printf("PASS: %s\n", name); }
+static void pass(const char* name) { printf("PASS: %s\n", name); fflush(stdout); }
 int main() {
   // Check the millisecond immediately before/at the end-of-life minute boundary.
   resetAt(LORAFISH_LIFESPAN_MINUTES-1);
@@ -189,11 +197,11 @@ int main() {
   pass("restart preserves egg, succession, device records, and both five-minute stages");
 
   resetAt(LORAFISH_LIFESPAN_MINUTES-1, true);
-  minute(); traits(1,2,3); assert(settingsWrites==0);
+  minute(); traits(1,2,3); assert(settingsWrites==1); // Happy checkpoint, not a new egg.
   for (int i=0; i<5; ++i) minute();
   assert(loRaFishGeneration==8 && !loRaFishPendingEgg && fish.ageMinutes==0);
   assert(loRaFishScaleColor==1 && loRaFishColor==2 && loRaFishEyeColor==3);
-  assert(settingsWrites==1);
+  assert(settingsWrites==2);
   pass("pre-existing visitor egg is neither replaced nor delayed");
 
   // Firmware upgrades must recover older saves already stuck on the memorial.
@@ -272,12 +280,13 @@ int main() {
 }
 ''')
 
-with tempfile.TemporaryDirectory(prefix='lorafish-lifecycle-') as directory:
-    cpp = Path(directory) / 'lifecycle.cpp'
-    cpp.write_text('\n'.join(parts))
-    for platform in ('ESP32', 'NRF52_PLATFORM'):
-        executable = Path(directory) / platform
-        subprocess.run(['g++', '-std=c++17', '-D' + platform, str(cpp), '-o', str(executable)],
-                       check=True)
-        print(f'Lifecycle/save/load checks: {platform}', flush=True)
-        subprocess.run([str(executable)], check=True)
+if __name__ == '__main__':
+    with tempfile.TemporaryDirectory(prefix='lorafish-lifecycle-') as directory:
+        cpp = Path(directory) / 'lifecycle.cpp'
+        cpp.write_text('\n'.join(parts))
+        for platform in ('ESP32', 'NRF52_PLATFORM'):
+            executable = Path(directory) / platform
+            subprocess.run(['g++', '-std=c++17', '-I', str(ROOT), '-D' + platform, str(cpp), '-o', str(executable)],
+                           check=True)
+            print(f'Lifecycle/save/load checks: {platform}', flush=True)
+            subprocess.run([str(executable)], check=True)

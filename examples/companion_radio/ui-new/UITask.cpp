@@ -2,6 +2,7 @@
 #include "PetResetConfirmation.h"
 #include "AdvertMenu.h"
 #include "LoRaFishMenu.h"
+#include "LoRaFishHappiness.h"
 #include "../MyMesh.h"
 #ifdef ESP32
 #include <SPIFFS.h>
@@ -138,8 +139,16 @@ static void saveLoRaFish();
 static void saveLoRaFishSettings();
 static void scheduleLoRaFishPoop();
 static LoRaFishState fish = {LORAFISH_MAGIC, 0, 0, 0, 0, 80, 0};
-static unsigned long fishLastMinute = 0;
-static unsigned long fishLastSave = 0;
+static uint32_t fishLastMinute = 0;
+static uint32_t fishLastSave = 0;
+static LoRaFishHappiness loRaFishHappiness;
+static LoRaFishHappiness lastWrittenLoRaFishHappiness;
+static bool haveLastWrittenLoRaFishHappiness = false;
+static uint32_t loRaFishHappyLastMs = 0;
+static uint32_t loRaFishHappyLastSavedMs = 0;
+static constexpr uint32_t LORAFISH_HAPPY_SETTINGS_MAGIC = 0x48415031; // "HAP1"
+static void advanceLoRaFishHappiness(uint32_t until);
+static void tickLoRaFish();
 static unsigned long fishReactionUntil = 0;
 static uint8_t fishReaction = 0; // 0 normal, 1 RX, 2 TX/ACK, 3 new contact
 
@@ -422,6 +431,7 @@ static void openLoRaFishValue(LoRaFishSetting setting) {
 static void selectLoRaFishValue() {
   uint8_t value;
   if (!loRaFishValuePicker.select(value)) return;
+  tickLoRaFish();
   switch (loRaFishValuePicker.key()) {
     case LoRaFishSetting::Theme: loRaFishTheme = value; applyLoRaFishTheme(); break;
     case LoRaFishSetting::Brightness:
@@ -504,8 +514,11 @@ static void loRaFishNaturalPosition(int w, int& x, int& y, bool& right) {
 
 // Gameplay and presentation are deliberately separate:
 // a meal is credited immediately when RF earns it; this animation is optional.
-static void creditLoRaFishMeal(bool animate) {
-  fish.happiness = (fish.happiness <= 97) ? fish.happiness + 3 : 100;
+static bool creditLoRaFishMeal(bool animate) {
+  const bool eligible = !loRaFishNeedsAppearanceSetup &&
+      fish.ageMinutes >= LORAFISH_EGG_MINUTES &&
+      fish.ageMinutes < LORAFISH_LIFESPAN_MINUTES && !loRaFishIsSleeping();
+  if (!loRaFishHappiness.meal(eligible, fish.happiness)) return false;
   scheduleLoRaFishPoop();
   saveLoRaFish();
 
@@ -514,8 +527,19 @@ static void creditLoRaFishMeal(bool animate) {
     loRaFishFeedChasing = false;
     loRaFishFeedStarted = millis();
   }
+  return true;
 }
 static uint32_t loRaFishNextAutoFeed = LORAFISH_PACKETS_PER_FEED;
+
+static bool consumeLoRaFishMeals(bool animate) {
+  bool fed = false;
+  while (fish.rfEvents >= loRaFishNextAutoFeed) {
+    if (creditLoRaFishMeal(animate)) fed = true;
+    // Sleeping, egg/memorial and cooldown thresholds are consumed, not queued.
+    loRaFishNextAutoFeed += LORAFISH_PACKETS_PER_FEED;
+  }
+  return fed;
+}
 
 // Tamagotchi-style tank hygiene.
 static uint8_t loRaFishPoopCount = 0;
@@ -570,6 +594,8 @@ static void startLoRaFishFeeding() {
 static void resetLoRaFishPet() {
   // Recreate the initial persisted pet state.
   fish = {LORAFISH_MAGIC, 0, 0, 0, 0, 80, 0};
+  loRaFishHappiness = {};
+  loRaFishHappyLastMs = millis();
   fishReaction = 0;
   fishReactionUntil = 0;
   loRaFishFeeding = false;
@@ -633,19 +659,18 @@ static bool loRaFishMeshTimeValid(uint32_t epoch) {
   return epoch >= 1704067200UL;
 }
 
+static int64_t loRaFishLocalEpoch() {
+  const uint32_t epoch = loRaFishRTC ? loRaFishRTC->getCurrentTime() : 0;
+  const int64_t baseEpoch = loRaFishMeshTimeValid(epoch) ? epoch
+      : (int64_t)DateTime(__DATE__,__TIME__).unixtime() + millis()/1000UL;
+  const int64_t localEpoch = baseEpoch + (int32_t)loRaFishUtcOffsetQuarters*900L;
+  return localEpoch < 0 ? 0 : localEpoch;
+}
+
 static bool loRaFishClock(char* timeBuf, size_t timeLen,
                           char* dateBuf, size_t dateLen) {
-  uint32_t epoch = loRaFishRTC ? loRaFishRTC->getCurrentTime() : 0;
-  const bool meshTimeValid=loRaFishMeshTimeValid(epoch);
-
-  int64_t baseEpoch;
-  if (meshTimeValid) {
-    baseEpoch=epoch;
-  } else {
-    baseEpoch=(int64_t)DateTime(__DATE__,__TIME__).unixtime()+millis()/1000UL;
-  }
-  int64_t localEpoch=baseEpoch+(int32_t)loRaFishUtcOffsetQuarters*900L;
-  if (localEpoch<0) localEpoch=0;
+  const bool meshTimeValid = loRaFishMeshTimeValid(loRaFishRTC ? loRaFishRTC->getCurrentTime() : 0);
+  const int64_t localEpoch = loRaFishLocalEpoch();
   DateTime dt((uint32_t)localEpoch);
   static const char* mon[]={"Jan","Feb","Mar","Apr","May","Jun",
                             "Jul","Aug","Sep","Oct","Nov","Dec"};
@@ -717,12 +742,21 @@ static void saveLoRaFishSettings() {
     f.write(&loRaFishEggAppearance.eyes, 1);
     f.write((uint8_t)(loRaFishNeedsAppearanceSetup ? 1 : 0));
     f.write((uint8_t)(loRaFishSimulationMode ? 1 : 0));
+    f.write((const uint8_t*)&LORAFISH_HAPPY_SETTINGS_MAGIC, sizeof(LORAFISH_HAPPY_SETTINGS_MAGIC));
+    f.write((const uint8_t*)&loRaFishHappiness.awakeMs, sizeof(loRaFishHappiness.awakeMs));
+    f.write((const uint8_t*)&loRaFishHappiness.mealCooldownMs, sizeof(loRaFishHappiness.mealCooldownMs));
     f.close();
+    lastWrittenLoRaFishHappiness = loRaFishHappiness;
+    haveLastWrittenLoRaFishHappiness = true;
+    loRaFishHappyLastSavedMs = millis();
   }
 #endif
 }
 
 static void loadLoRaFishSettings() {
+  loRaFishHappiness = {};
+  haveLastWrittenLoRaFishHappiness = false;
+  loRaFishHappyLastMs = loRaFishHappyLastSavedMs = millis();
 #if defined(LORAFISH_TDECK_NVS) && defined(ESP32)
   LoRaFishNVSFile f("cfg", false);
 #elif defined(ESP32)
@@ -806,6 +840,17 @@ static void loadLoRaFishSettings() {
     if (f.read(&appearanceSetup,1)==1) loRaFishNeedsAppearanceSetup=appearanceSetup!=0;
     uint8_t simulationMode=0;
     if (f.read(&simulationMode,1)==1) loRaFishSimulationMode=simulationMode!=0;
+    uint32_t happyMagic = 0;
+    LoRaFishHappiness happy;
+    if (f.read((uint8_t*)&happyMagic, sizeof(happyMagic)) == sizeof(happyMagic) &&
+        happyMagic == LORAFISH_HAPPY_SETTINGS_MAGIC &&
+        f.read((uint8_t*)&happy.awakeMs, sizeof(happy.awakeMs)) == sizeof(happy.awakeMs) &&
+        f.read((uint8_t*)&happy.mealCooldownMs, sizeof(happy.mealCooldownMs)) == sizeof(happy.mealCooldownMs) &&
+        happy.valid()) {
+      loRaFishHappiness = happy;
+      lastWrittenLoRaFishHappiness = happy;
+      haveLastWrittenLoRaFishHappiness = true;
+    }
     f.close();
   }
 #endif
@@ -823,6 +868,15 @@ static LoRaFishState lastWrittenLoRaFish;
 static bool haveLastWrittenLoRaFish = false;
 
 static void saveLoRaFish() {
+  // Save new meals/decay immediately, and elapsed timing at five-minute
+  // checkpoints. RF messages also save the pet: do not rewrite settings for
+  // every packet just because a few milliseconds of timing have elapsed.
+  const bool timingChanged = !loRaFishHappiness.same(lastWrittenLoRaFishHappiness);
+  if (!haveLastWrittenLoRaFishHappiness || (timingChanged &&
+      (loRaFishHappiness.mealCooldownMs > lastWrittenLoRaFishHappiness.mealCooldownMs ||
+       loRaFishHappiness.awakeMs < lastWrittenLoRaFishHappiness.awakeMs ||
+       (uint32_t)(millis() - loRaFishHappyLastSavedMs) >= 5UL*60000UL)))
+    saveLoRaFishSettings();
   // Skip identical writes. Flash has limited erase cycles, and this also
   // stops the same record being written twice in one save cycle.
   if (haveLastWrittenLoRaFish && sameLoRaFishRecord(lastWrittenLoRaFish, fish)) {
@@ -916,6 +970,8 @@ static void hatchLoRaFishOffspring() {
   const uint32_t keepVisits = fish.dxVisits;
   const uint32_t keepUptime = fish.longestUptimeMinutes;
   fish = {LORAFISH_MAGIC, 0, 0, 0, 0, 80, 0, keepVisits, keepUptime};
+  loRaFishHappiness = {};
+  loRaFishHappyLastMs = millis();
   loRaFishColor=loRaFishEggAppearance.body;
   loRaFishScaleColor=loRaFishEggAppearance.scales;
   loRaFishEyeColor=loRaFishEggAppearance.eyes;
@@ -940,9 +996,26 @@ static void hatchLoRaFishOffspring() {
   saveLoRaFish();
 }
 
+static void advanceLoRaFishHappiness(uint32_t until) {
+  const uint32_t elapsed = until - loRaFishHappyLastMs;
+  if (!elapsed) return;
+  const uint32_t now = millis();
+  const uint32_t localNowMs = (uint32_t)(loRaFishLocalEpoch() % 86400) * 1000UL + now % 1000UL;
+  const uint32_t behind = now - until;
+  const uint32_t localEndMs = (localNowMs + LoRaFishHappiness::dayMs -
+      behind % LoRaFishHappiness::dayMs) % LoRaFishHappiness::dayMs;
+  const bool living = !loRaFishNeedsAppearanceSetup &&
+      fish.ageMinutes >= LORAFISH_EGG_MINUTES && fish.ageMinutes < LORAFISH_LIFESPAN_MINUTES;
+  loRaFishHappiness.advance(elapsed, living, localEndMs, loRaFishSleepHour,
+                           loRaFishWakeHour, loRaFishPoopCount, fish.happiness);
+  loRaFishHappyLastMs = until;
+}
+
 static void tickLoRaFish() {
-  unsigned long now = millis();
+  const uint32_t now = millis();
+  const uint8_t previousHappiness = fish.happiness;
   if (loRaFishNeedsAppearanceSetup) {
+    advanceLoRaFishHappiness(now);
     fishLastMinute=now;
     return;
   }
@@ -952,6 +1025,7 @@ static void tickLoRaFish() {
   ensureLoRaFishOffspring();
   while (now - fishLastMinute >= 60000UL) {
     fishLastMinute += 60000UL;
+    advanceLoRaFishHappiness(fishLastMinute);
     fish.ageMinutes++;
     uint8_t previousEvolution=fish.evolution;
     fish.evolution = fishEvolutionForAge(fish.ageMinutes);
@@ -968,14 +1042,15 @@ static void tickLoRaFish() {
     }
     if ((fish.ageMinutes % 5) == 0) saveLoRaFish();
   }
-  if (now - fishLastSave >= 15UL*60UL*1000UL) saveLoRaFish();
+  advanceLoRaFishHappiness(now);
+  if (fish.happiness != previousHappiness || now - fishLastSave >= 15UL*60UL*1000UL)
+    saveLoRaFish();
 }
 
 static void reactLoRaFish(uint8_t reaction) {
   fishReaction = reaction;
   fishReactionUntil = millis() + 2500UL;
   fish.rfEvents++;
-  if (fish.happiness < 100) fish.happiness++;
 }
 
 // -----------------------------------------------------------------------------
@@ -1774,6 +1849,7 @@ static void startLoRaFishGuessGame() {
 }
 
 static void submitLoRaFishGuess() {
+  tickLoRaFish();
   if (loRaFishGuessComplete) {
     startLoRaFishGuessGame();
     return;
@@ -2501,13 +2577,8 @@ static void drawLoRaFishPairing(DisplayDriver& display) {
 }
 
 static bool loRaFishIsSleeping() {
-  char tb[8], db[24];
-  loRaFishClock(tb,sizeof(tb),db,sizeof(db));
-  int hh = atoi(tb);
-  if (loRaFishSleepHour == loRaFishWakeHour) return false;
-  if (loRaFishSleepHour > loRaFishWakeHour)
-    return hh >= loRaFishSleepHour || hh < loRaFishWakeHour;
-  return hh >= loRaFishSleepHour && hh < loRaFishWakeHour;
+  return LoRaFishHappiness::sleeping((loRaFishLocalEpoch() / 3600) % 24,
+                                    loRaFishSleepHour, loRaFishWakeHour);
 }
 
 static void drawLoRaFishSleeping(DisplayDriver& display, UITask* task) {
@@ -3707,22 +3778,11 @@ void UITask::loop() {
     loRaFishReturnNavigationHandled=false;
   }
 
-  // OLED sleep and PET sleep are different:
-  // - OLED off: gameplay continues normally and eating still beeps.
-  // - Scheduled pet sleep (21:00-07:00): RF is counted, but the sleeping fish
-  //   does not eat. Consume earned-feed thresholds so meals do not pile up
-  //   overnight and suddenly fire when the fish wakes.
-  const bool petSleeping = loRaFishIsSleeping();
-  while (fish.rfEvents >= loRaFishNextAutoFeed) {
-    if (!petSleeping) {
-      const bool canAnimate = _display && _display->isOn() &&
+  // OLED off does not pause care. Actual meals (including sound/waste) are
+  // limited to one per hour; skipped thresholds never accumulate a backlog.
+  const bool canAnimateMeal = _display && _display->isOn() &&
                               loRaFishPage == 0 && !loRaFishFeeding;
-      creditLoRaFishMeal(canAnimate);
-      // Eating sound is gameplay feedback, independent of OLED state.
-      playFeedPip();
-    }
-    loRaFishNextAutoFeed += LORAFISH_PACKETS_PER_FEED;
-  }
+  if (consumeLoRaFishMeals(canAnimateMeal)) playFeedPip();
 
   if (tickLoRaFishPoop()) {
     playCleanMelody();
