@@ -22,6 +22,10 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 - Higher/Lower game - 5 rounds; each correct guess adds 1 Happy (max +5 per game)
 
 ## Testing features:
+- Emoji-safe names and fish-marked DX discovery
+    - Fish markers 🐟 🐠 🐡 🦈 render as `><>`; unsupported Unicode renders as spaces
+    - The DX picker lists only saved companion contacts with a fish marker in their name
+    - Dismissible boot reminder for unmarked names; no automatic renaming
 - LoRagotchi-local flash and display savings
     - Five-minute passive-counter checkpoints; immediate care/lifecycle/settings saves
     - Identical-record suppression and bounded retries after failed file writes

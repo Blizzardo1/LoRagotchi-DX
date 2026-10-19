@@ -65,7 +65,7 @@ struct UITask {
 '''
 source += block('void UITask::handleLoRaFishMessage() {')
 for name in '''loRaFishBatteryValid loRaFishBatterySampledAt loRaFishBatteryMilliVolts
-loRaFishStaticFrameValid loRaFishStaticFrame loRaFishOption loRaFishDisplayOption
+loRaFishNameNotice loRaFishStaticFrameValid loRaFishStaticFrame loRaFishOption loRaFishDisplayOption
 loRaFishTimeField loRaFishTimeoutField loRaFishSoundField loRaFishValuePicker
 loRaFishResetConfirmation loRaFishAdvertMenu loRaFishScreenDimmed
 loRaFishBrightnessNeedsApply loRaFishTimeoutSleepStateKnown loRaFishTimeoutSleepState
@@ -271,6 +271,16 @@ int main() {
   beginCheck();panel.on=false;const auto age=fish.ageMinutes;
   clockMs+=60000;service();assert(fish.ageMinutes==age+1);
   pass("off display writes nothing, wake redraws and pet simulation remains independent");
+
+  loRaFishPage=0;loRaFishSimulationMode=false;loRaFishNameNotice=true;
+  panel.on=true;panel.frames=0;drawCalls=0;next=0;clockMs=0;
+  loRaFishStaticFrameValid=false;
+  for(int i=0;i<100;++i){displayLoop(&panel,&screen,&screen,next);clockMs+=100;}
+  assert(panel.frames==1 && drawCalls==1);
+  loRaFishNameNotice=false;next=0;
+  displayLoop(&panel,&screen,&screen,next);assert(panel.frames==2);
+  clockMs+=100;displayLoop(&panel,&screen,&screen,next);assert(panel.frames==3);
+  pass("boot notice stays static until dismissed, then normal aquarium frames resume");
 }
 '''
 # Call-site assertions protect isolation from the fresh safety path.

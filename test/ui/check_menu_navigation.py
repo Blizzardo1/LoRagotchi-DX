@@ -26,6 +26,7 @@ pre=r'''
 #include "examples/companion_radio/ui-new/LoRaFishMenu.h"
 #include "examples/companion_radio/ui-new/AdvertMenu.h"
 #include "examples/companion_radio/ui-new/PetResetConfirmation.h"
+#include "examples/companion_radio/ui-new/LoRaFishText.h"
 #include "src/helpers/ui/DisplayDriver.h"
 using std::min; using std::max;
 #define LORAFISH_UI 1
@@ -60,22 +61,35 @@ static int dxWrites=0;
 static void loragotchiDXSave(){++dxWrites;}
 static bool fishSleeping=false;
 static bool loRaFishIsSleeping(){return fishSleeping;}
-static const char* loRaFishDisplayName(){return "Fish";}
+static const char* loRaFishMeshNodeName="Fish";
 struct {uint32_t ageMinutes=60,rfEvents=1;uint8_t evolution=1;} fish;
 struct {template<typename... Args> void printf(const char*,Args...){} void println(const char*){}} Serial;
 static void loRaFishClock(char* time,size_t tsize,char* date,size_t dsize){
   snprintf(time,tsize,"12:00");snprintf(date,dsize,"Monday");
 }
 static constexpr uint32_t MAX_ANON_CONTACTS=2;
-struct ContactInfo {char name[32];uint32_t index;};
+static constexpr size_t PUB_KEY_SIZE=32;
+static constexpr uint8_t ADV_TYPE_CHAT=1;
+struct ContactInfo {char name[32];uint32_t index;uint8_t type=ADV_TYPE_CHAT;
+  struct {uint8_t pub_key[PUB_KEY_SIZE]={};} id;
+};
 struct {int sends=0,rescues=0;bool fail=false,lastFlood=false;
-  int contacts=3; int getNumContacts(){return contacts;}
+  bool useCustom=false; std::vector<ContactInfo> custom;
+  int contacts=3; int getNumContacts(){return useCustom ? (int)custom.size() : contacts;}
   bool advert(bool flood=false){if(fail)return false;++sends;lastFlood=flood;return true;}
   void enterCLIRescue(){++rescues;}
   int dxSends=0; uint32_t lastDestination=0;std::string lastMessage;
   bool getContactByIdx(uint32_t raw,ContactInfo& c){
-    if(raw<MAX_ANON_CONTACTS || raw>=MAX_ANON_CONTACTS+contacts)return false;
-    c.index=raw-MAX_ANON_CONTACTS;snprintf(c.name,sizeof(c.name),"Peer%u",c.index);return true;
+    if(raw<MAX_ANON_CONTACTS || raw>=MAX_ANON_CONTACTS+getNumContacts())return false;
+    if(useCustom){c=custom[raw-MAX_ANON_CONTACTS];return true;}
+    c.index=raw-MAX_ANON_CONTACTS;snprintf(c.name,sizeof(c.name),"Peer%u 🐟",c.index);
+    c.id.pub_key[0]=c.index+1;return true;
+  }
+  ContactInfo* lookupContactByPubKey(const uint8_t* key,int size){
+    static ContactInfo c;
+    for(int i=0;i<getNumContacts();++i)
+      if(getContactByIdx(MAX_ANON_CONTACTS+i,c) && !memcmp(c.id.pub_key,key,size))return &c;
+    return nullptr;
   }
   struct RTC {uint32_t getCurrentTime(){return 1;}} rtc;
   RTC* getRTCClock(){return &rtc;}
@@ -88,8 +102,9 @@ class BoundsDisplay : public DisplayDriver {
   struct Box{int x,y,w,h;}; std::vector<Box> boxes;
 public:
   bool on=true;
+  std::vector<std::string> printed;
   BoundsDisplay():DisplayDriver(128,64){}
-  void clearBounds(){boxes.clear();x=y=0;size=1;}
+  void clearBounds(){boxes.clear();printed.clear();x=y=0;size=1;}
   bool isOn() override {return on;}
   void turnOn() override {on=true;} void turnOff() override {on=false;}
   void clear() override {} void startFrame(ColorVal) override {} void endFrame() override {}
@@ -98,6 +113,8 @@ public:
   uint16_t getTextWidth(const char* t) override {return strlen(t)*6*size;}
   void print(const char* t) override {
     if(!*t)return;
+    printed.emplace_back(t);
+    for(const unsigned char* p=(const unsigned char*)t;*p;++p)assert(*p>=32 && *p<=126);
     int w=getTextWidth(t),h=8*size;
     if(!(x>=0 && x+w<=width() && y>=0 && y+h<=height())) {
       fprintf(stderr,"BOUNDS (%d,%d) %dx%d %s\n",x,y,w,h,t);abort();
@@ -115,17 +132,17 @@ static void loRaFishRegisterDisplayActivity(DisplayDriver&){}
 static uint32_t loRaFishScreenTimeoutMs(){return 15000;}
 class UITask;
 '''
-names='LORAFISH_DX_CONTACT_PAGE loRaFishDXRequestStarted loRaFishPage loRaFishOption loRaFishValuePicker loRaFishDisplayOption loRaFishTimeField loRaFishTimeoutField loRaFishSoundField LORAFISH_PAGE_COUNT LORAFISH_RESET_CONFIRM_PAGE loRaFishResetConfirmation LORAFISH_ADVERT_PAGE loRaFishAdvertMenu loRaFishTheme loRaFishColor loRaFishScaleColor loRaFishEyeColor loRaFishColorField loRaFishNeedsAppearanceSetup loRaFishColorDisplay loRaFishSimulationMode loRaFishGuessNumber loRaFishGuessPrevious loRaFishGuessRounds loRaFishGuessScore loRaFishGuessHigher loRaFishGuessResultShown loRaFishGuessCorrect loRaFishGuessComplete loRaFishTimeoutAwakeSetting loRaFishTimeoutAsleepSetting loRaFishTimeoutShortNames loRaFishBrightnessSetting loRaFishBrightnessNames loRaFishBrightnessNeedsApply loRaFishAlwaysOnDimSetting loRaFishAlwaysOnDimNames loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound loRaFishMessageSound loRaFishVolumeNames loRaFishWakeSoundNames loRaFishSleepSoundNames loRaFishMessageSoundNames loRaFishWakeMelodies loRaFishSleepMelodies loRaFishMessageMelodies loRaFishSleepHour loRaFishWakeHour loRaFishUtcOffsetQuarters loRaFishColorNames'.split()
+names='loRaFishDXCommitLastSent loRaFishDXCommitRetries loRaFishNameNotice loRaFishDXDestinationKey loRaFishDXDestinationKnown LORAFISH_DX_CONTACT_PAGE loRaFishDXRequestStarted loRaFishPage loRaFishOption loRaFishValuePicker loRaFishDisplayOption loRaFishTimeField loRaFishTimeoutField loRaFishSoundField LORAFISH_PAGE_COUNT LORAFISH_RESET_CONFIRM_PAGE loRaFishResetConfirmation LORAFISH_ADVERT_PAGE loRaFishAdvertMenu loRaFishTheme loRaFishColor loRaFishScaleColor loRaFishEyeColor loRaFishColorField loRaFishNeedsAppearanceSetup loRaFishColorDisplay loRaFishSimulationMode loRaFishGuessNumber loRaFishGuessPrevious loRaFishGuessRounds loRaFishGuessScore loRaFishGuessHigher loRaFishGuessResultShown loRaFishGuessCorrect loRaFishGuessComplete loRaFishTimeoutAwakeSetting loRaFishTimeoutAsleepSetting loRaFishTimeoutShortNames loRaFishBrightnessSetting loRaFishBrightnessNames loRaFishBrightnessNeedsApply loRaFishAlwaysOnDimSetting loRaFishAlwaysOnDimNames loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound loRaFishMessageSound loRaFishVolumeNames loRaFishWakeSoundNames loRaFishSleepSoundNames loRaFishMessageSoundNames loRaFishWakeMelodies loRaFishSleepMelodies loRaFishMessageMelodies loRaFishSleepHour loRaFishWakeHour loRaFishUtcOffsetQuarters loRaFishColorNames'.split()
 parts=[pre]+[declaration(name) for name in names]
 parts += [block('struct LoRaFishThemePalette')+';',declaration('loRaFishThemes'),
  'static constexpr uint8_t LORAFISH_COLOR_THEME_COUNT=4,LORAFISH_COLOR_ALLELE_COUNT=7;',
  source[source.index('static constexpr bool loRaFishHasSound'):source.index('#endif',source.index('static constexpr bool loRaFishHasSound'))+len('#endif')]]
-for name in ['static uint8_t loRaFishThemeCount(', 'static uint8_t loRaFishDisplayOptionCount(',
+for name in ['static void beginLoRaFishNameNotice(', 'static const char* loRaFishDisplayName(', 'static const char* loRaFishProtocolName(', 'static uint8_t loRaFishThemeCount(', 'static uint8_t loRaFishDisplayOptionCount(',
  'static uint8_t loRaFishOptionCount(', 'static void returnToLoRaFishOptions(',
  'static void cancelLoRaFishValue(', 'static void openLoRaFishValue(', 'static void selectLoRaFishValue(',
  'static void loRaFishFormatUtcOffset(', 'static void drawLoRaFishHeader(',
  'static const char* loRaFishOptionLabel(', 'static void drawLoRaFishMenuHint(',
- 'static bool loRaFishDXGetContact(', 'static void drawLoRaFishDX(',
+ 'static bool loRaFishDXDestination(', 'static void serviceLoRaFishDXCommit(', 'static bool loRaFishDXEligible(', 'static uint32_t loRaFishDXContactCount(', 'static bool loRaFishDXGetContact(', 'static void moveLoRaFishDXContact(', 'static void drawLoRaFishName(', 'static void drawLoRaFishNameNotice(', 'static void drawLoRaFishDX(',
  'static void drawLoRaFishValuePicker(', 'static void drawLoRaFishOptions(',
  'static void closeLoRaFishAdvertMenu(', 'static void drawLoRaFishAdvertMenu(',
  'static void cancelLoRaFishReset(', 'static void drawLoRaFishResetConfirmation(',
@@ -142,9 +159,13 @@ public:
   BoundsDisplay display; DisplayDriver* _display=&display;
   UIScreen screen,other; UIScreen* home=&screen; UIScreen* curr=home;
   unsigned long _next_refresh=0,_auto_off=0,_alert_expiry=0,ui_started_at=0;
-  int gpsToggles=0;std::string alert;
+  int gpsToggles=0,buzzerToggles=0;std::string alert;
+  char _alert[80]={};
+  void toggleBuzzer(){++buzzerToggles;}
+  char handleTripleClick(char);
+  void showAlertImpl(const char*,int);
   struct {int previews=0,volume=4;void setVolume(int v){volume=v;} void play(const char*){++previews;}} buzzer;
-  void showAlert(const char* s,int t){alert=s;_alert_expiry=tick+t;}
+  void showAlert(const char* s,int t){showAlertImpl(s,t);alert=_alert;}
   void notify(UIEventType){}
   void toggleGPS(){++gpsToggles;}
   void gotoHomeScreen(){setCurrScreen(home);}
@@ -157,6 +178,8 @@ public:
 ''')
 for name in ['void UITask::setCurrScreen(', 'char UITask::checkDisplayOn(', 'char UITask::handleDoubleClick(', 'void UITask::previewLoRaFishSoundSetting(']:parts.append(block(name))
 parts.append(block('char UITask::handleLongPress('))
+parts.append(block('char UITask::handleTripleClick('))
+parts.append(block('void UITask::showAlert(').replace('UITask::showAlert(', 'UITask::showAlertImpl('))
 home=source[source.index('class HomeScreen'):]
 short=block('bool handleInput(char c) override',home).replace('bool handleInput(char c) override','bool shortPress(char c)')
 parts.append(short)
@@ -198,6 +221,7 @@ int main(){
   }
   // Actual DX action dispatch: mocks only at the radio/storage boundary.
   for(int state=0;state<4;++state) {
+    loRaFishDXDestinationKnown=false;
     the_mesh.contacts=3;loragotchiDXHome.away=state==3;
     loragotchiDXHome.pending=state==1;loragotchiDXHome.committing=state==2;
     loragotchiDXHome.destinationIndex=2;loRaFishDXContactIndex=0;
@@ -220,7 +244,7 @@ int main(){
   task._alert_expiry=0;the_mesh.contacts=0;loRaFishPage=4;
   const int sent=the_mesh.dxSends;
   task.handleLongPress(KEY_ENTER);task.handleLongPress(KEY_ENTER);
-  assert(task.alert=="No DX contact" && the_mesh.dxSends==sent);
+  assert(task.alert=="No fish tanks" && the_mesh.dxSends==sent);
   the_mesh.contacts=3;task._alert_expiry=0;fishSleeping=true;
   task.handleLongPress(KEY_ENTER);assert(task.alert=="Fish is sleeping" && the_mesh.dxSends==sent);
   fishSleeping=false;task._alert_expiry=tick+500;
@@ -332,11 +356,12 @@ int main(){
   printf("PASS: aquarium-to-Options across 12 contact/travel combinations, DX picker/send/recall guards, production menu handlers/settings bindings, parent returns, optional rows, save/cancel, wake/alert guards, reset/advert regression, text bounds/overlap; sound=%d\n",loRaFishHasSound);
 }
 ''')
-with tempfile.TemporaryDirectory(prefix='lorafish-menu-check-') as temporary:
-    cpp=Path(temporary)/'menu-host-check.cpp';cpp.write_text('\n'.join(parts))
-    for sound in [False,True]:
-        out=Path(temporary)/f'menu-host-check-{int(sound)}'
-        cmd=['g++','-std=c++17','-I',str(root),str(cpp),'-o',str(out)]
-        if sound:cmd+=['-DPIN_BUZZER=6']
-        subprocess.run(cmd,check=True)
-        subprocess.run([str(out)],check=True)
+if __name__ == '__main__':
+    with tempfile.TemporaryDirectory(prefix='lorafish-menu-check-') as temporary:
+        cpp=Path(temporary)/'menu-host-check.cpp';cpp.write_text('\n'.join(parts))
+        for sound in [False,True]:
+            out=Path(temporary)/f'menu-host-check-{int(sound)}'
+            cmd=['g++','-std=c++17','-I',str(root),'-I',str(root/'src'),str(cpp),'-o',str(out)]
+            if sound:cmd+=['-DPIN_BUZZER=6']
+            subprocess.run(cmd,check=True)
+            subprocess.run([str(out)],check=True)

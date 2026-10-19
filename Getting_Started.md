@@ -15,6 +15,21 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 4. Use **Options → Schedule & time** to set your local UTC offset and sleep/wake hours.
 5. On a color display, select Scales, Body, or Eyes on the new-fish screen, then hold to edit that trait. Click through colors and hold to save. Finally select **Start fish** and hold. Double-click goes back without starting the fish; setup remains available under **Options → Display → Fish color**. Monochrome displays skip this screen and start with monochrome traits.
 
+Add **🐟, 🐠, 🐡, or 🦈** to your node name in the MeshCore app to opt in to
+fish-marked DX discovery. The firmware never renames you automatically. If no
+supported fish is present at boot, an advisory appears after the splash screen.
+**Short-click to dismiss**; that click does not navigate, start a visit, or change
+settings. The reminder stays dismissed for this boot and returns next boot if the
+name is still unmarked. A sleeping display's first click only wakes it. The
+first-eight-second long-press CLI rescue gesture is unchanged.
+
+Small device fonts display these four fish as `><>`. Other unsupported Unicode
+characters become spaces, and variation selectors/joiners are not printed as
+garbage bytes. This applies to the local tank name, DX target/visitor names, and
+LoRagotchi alerts. Stored names and advertised names keep their original UTF-8;
+the bounded name in a DX request also keeps complete UTF-8 characters rather than
+the display substitution. This is a simple-font fallback, not a full emoji font.
+
 Pet age, RF-event count, happiness, and other pet state are saved across restarts. Display and schedule settings are also saved. DX travel is temporary: after a reboot, the local fish returns home and any visiting-fish slot is cleared.
 
 Routine pet counters are checkpointed at most five minutes apart while the firmware
@@ -255,6 +270,22 @@ at once on waking. Eggs and Memorial likewise do not earn meals. A sleeping fish
 cannot start a DX visit, though a fish already away can still be recalled.
 
 ## DX Visits
+
+The contact picker shows **only saved companion/chat contacts** with 🐟 (fish),
+🐠 (tropical fish), 🐡 (blowfish), or 🦈 (shark) anywhere in their raw name.
+Text/emoji presentation variants of those characters also count. Repeaters and
+room servers are excluded even if their names contain a fish. Ordinary companions
+without a marker remain in MeshCore's contacts but are hidden from this picker.
+Other sea creatures and fish-related objects such as fishing poles or fish cakes
+are not markers. A marker is an opt-in naming convention, not a firmware probe.
+
+The displayed position/count refer to matching tanks only. With none available,
+the picker says **NO FISH TANKS** and Back still works. After changing a name, send
+an advert and let the peer's contact entry update before checking its picker.
+Recalling an existing visit does not require the host to retain its marker: the
+active target is retained by public key, so renaming/reordering contacts cannot
+redirect a recall or commit retry. A deleted/unavailable target produces a notice
+instead of sending to an unrelated contact.
 
 On the **DX Visit** overview, long-press to open the contact picker. Opening it sends nothing. In the picker, short-click cycles through compatible LoRaGotchi DX peers and a separate long-press sends a visit request when the local fish is awake. The peers exchange request, acknowledgment, commit, and arrival-confirmation messages. Once accepted, the visitor appears in the other aquarium while the host fish continues its own behavior.
 

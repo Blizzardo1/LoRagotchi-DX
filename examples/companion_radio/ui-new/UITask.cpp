@@ -3,6 +3,7 @@
 #include "AdvertMenu.h"
 #include "LoRaFishMenu.h"
 #include "LoRaFishHappiness.h"
+#include "LoRaFishText.h"
 #include "../MyMesh.h"
 #ifdef ESP32
 #include <SPIFFS.h>
@@ -99,14 +100,24 @@ public:
 static mesh::RTCClock* loRaFishRTC = nullptr;
 
 static const char* loRaFishMeshNodeName = nullptr;
+static bool loRaFishNameNotice = false;
+
+static void beginLoRaFishNameNotice() {
+  loRaFishNameNotice = !LoRaFishText::hasFish(loRaFishMeshNodeName, 32);
+}
+
+static const char* loRaFishProtocolName() {
+  static char name[16];
+  LoRaFishText::rawPrefix(name, sizeof(name), loRaFishMeshNodeName, 32);
+  return name[0] ? name : "LoRaFish";
+}
 
 static const char* loRaFishDisplayName() {
   if (!loRaFishMeshNodeName || !loRaFishMeshNodeName[0]) return "LoRaFish";
 
   // Keep the left header clear of the clock/right-side status on 128px displays.
   static char shortName[16];
-  strncpy(shortName, loRaFishMeshNodeName, sizeof(shortName)-1);
-  shortName[sizeof(shortName)-1] = 0;
+  LoRaFishText::display(shortName, sizeof(shortName), loRaFishMeshNodeName, 32);
   return shortName;
 }
 
@@ -2083,6 +2094,20 @@ static void drawLoRaFishSoundMenu(DisplayDriver& display) {
 #endif
 
 static uint32_t loRaFishDXContactIndex=0;
+// Selection is a persistent-contact index, never a filtered row number.
+static uint8_t loRaFishDXDestinationKey[PUB_KEY_SIZE];
+static bool loRaFishDXDestinationKnown = false;
+
+static bool loRaFishDXDestination(ContactInfo& c) {
+  if (loRaFishDXDestinationKnown) {
+    const ContactInfo* found = the_mesh.lookupContactByPubKey(loRaFishDXDestinationKey, PUB_KEY_SIZE);
+    if (!found) return false;
+    c = *found;
+    return true;
+  }
+  return the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + loragotchiDXHome.destinationIndex, c);
+}
+
 static uint32_t loRaFishDXRequestStarted=0;
 static uint32_t loRaFishDXCommitLastSent=0;
 static uint8_t loRaFishDXCommitRetries=0;
@@ -2111,7 +2136,7 @@ static void serviceLoRaFishDXCommit() {
     return;
   }
   ContactInfo dest;
-  if(!the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + loragotchiDXHome.destinationIndex,dest)) return;
+  if(!loRaFishDXDestination(dest)) return;
   char msg[80];
   snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu",
            (unsigned long)loragotchiDXHome.txid,(unsigned long)loragotchiDXHome.fishid);
@@ -2123,20 +2148,57 @@ static void serviceLoRaFishDXCommit() {
 }
 
 
+static bool loRaFishDXEligible(const ContactInfo& c) {
+  return c.type == ADV_TYPE_CHAT && LoRaFishText::hasFish(c.name, sizeof(c.name));
+}
+
+static uint32_t loRaFishDXContactCount(uint32_t* selectedRow = nullptr) {
+  uint32_t count = 0;
+  for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+    ContactInfo c;
+    if (the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + i, c) && loRaFishDXEligible(c)) {
+      if (selectedRow && (uint32_t)i == loRaFishDXContactIndex) *selectedRow = count;
+      ++count;
+    }
+  }
+  return count;
+}
+
 static bool loRaFishDXGetContact(ContactInfo& c) {
-  const int n=the_mesh.getNumContacts();
-  if(n<=0) return false;
-  if(loRaFishDXContactIndex >= (uint32_t)n) loRaFishDXContactIndex=0;
+  const int available = the_mesh.getNumContacts();
+  if (available <= 0) return false;
+  const uint32_t count = (uint32_t)available;
+  if (loRaFishDXContactIndex >= count) loRaFishDXContactIndex = 0;
+  for (uint32_t offset = 0; offset < count; ++offset) {
+    const uint32_t index = (loRaFishDXContactIndex + offset) % count;
+    if (the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + index, c) && loRaFishDXEligible(c)) {
+      loRaFishDXContactIndex = index;
+      return true;
+    }
+  }
+  return false;
+}
 
-  // BaseChatMesh reserves the first MAX_ANON_CONTACTS slots for transient
-  // contacts. getNumContacts() excludes them, but getContactByIdx() addresses
-  // the underlying slot array, so offset into the persistent-contact region.
-  const uint32_t rawIndex=(uint32_t)MAX_ANON_CONTACTS + loRaFishDXContactIndex;
-  if(!the_mesh.getContactByIdx(rawIndex,c)) return false;
+static void moveLoRaFishDXContact(bool previous) {
+  const int available = the_mesh.getNumContacts();
+  if (available <= 0) return;
+  const uint32_t count = (uint32_t)available;
+  loRaFishDXContactIndex %= count;
+  for (uint32_t step = 1; step <= count; ++step) {
+    const uint32_t index = (loRaFishDXContactIndex + (previous ? count - step : step)) % count;
+    ContactInfo c;
+    if (the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + index, c) && loRaFishDXEligible(c)) {
+      loRaFishDXContactIndex = index;
+      return;
+    }
+  }
+}
 
-  // Don't present an empty/reserved entry as a DX destination.
-  if(c.name[0]=='\\0') return false;
-  return true;
+static void drawLoRaFishName(DisplayDriver& display, int y, const char* name, size_t capacity) {
+  char text[32];
+  const size_t columns = min((int)sizeof(text) - 1, max(0, (display.width() - 6) / 6));
+  LoRaFishText::display(text, columns + 1, name, capacity);
+  display.drawTextCentered(display.width() / 2, y, text);
 }
 
 static void drawLoRaFishDX(DisplayDriver& display) {
@@ -2149,11 +2211,11 @@ static void drawLoRaFishDX(DisplayDriver& display) {
   if(loragotchiDXHome.away) {
     display.drawTextCentered(w/2,27,"FISH AWAY");
     display.setColor(UIColor::secondary_txt);
-    display.drawTextCentered(w/2,39,loragotchiDXHome.destinationName);
+    drawLoRaFishName(display,39,loragotchiDXHome.destinationName,sizeof(loragotchiDXHome.destinationName));
   } else if(loragotchiDXHome.committing) {
     display.drawTextCentered(w/2,28,"DELIVERING...");
     display.setColor(UIColor::secondary_txt);
-    display.drawTextCentered(w/2,40,loragotchiDXHome.destinationName);
+    drawLoRaFishName(display,40,loragotchiDXHome.destinationName,sizeof(loragotchiDXHome.destinationName));
   } else if(loragotchiDXHome.pending) {
     if(loRaFishDXRequestStarted && millis()-loRaFishDXRequestStarted > 20000UL) {
       loragotchiDXHome.pending=false;
@@ -2163,7 +2225,7 @@ static void drawLoRaFishDX(DisplayDriver& display) {
     }
     display.drawTextCentered(w/2,28,loragotchiDXHome.pending?"CALLING...":"NO REPLY - RETRY");
     display.setColor(UIColor::secondary_txt);
-    display.drawTextCentered(w/2,40,loragotchiDXHome.destinationName);
+    drawLoRaFishName(display,40,loragotchiDXHome.destinationName,sizeof(loragotchiDXHome.destinationName));
   } else if (!choosingContact) {
     display.drawTextCentered(w/2,27,"Visit a friend");
     display.setColor(UIColor::secondary_txt);
@@ -2171,12 +2233,18 @@ static void drawLoRaFishDX(DisplayDriver& display) {
   } else {
     ContactInfo c;
     if(loRaFishDXGetContact(c)) {
-      display.drawTextCentered(w/2,27,c.name);
-      char b[28]; snprintf(b,sizeof(b),"%lu/%d",
-          (unsigned long)(loRaFishDXContactIndex+1),the_mesh.getNumContacts());
+      drawLoRaFishName(display,27,c.name,sizeof(c.name));
+      uint32_t row = 0;
+      const uint32_t count = loRaFishDXContactCount(&row);
+      char b[28]; snprintf(b,sizeof(b),"%lu/%lu fish tanks",
+          (unsigned long)(row+1),(unsigned long)count);
       display.setColor(UIColor::secondary_txt);
       display.drawTextCentered(w/2,39,b);
-    } else display.drawTextCentered(w/2,31,"NO CONTACTS");
+    } else {
+      display.drawTextCentered(w/2,27,"NO FISH TANKS");
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextCentered(w/2,39,"Fish-marked friends");
+    }
   }
   display.setColor(UIColor::secondary_txt);
   const char* hint = "1:NEXT 2:BACK L:OPEN";
@@ -2555,7 +2623,7 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
       drawFishSpriteForStage(display,gx,gy,gright,loragotchiDXGuest.stage,loRaFishGuestRenderAppearance());
     if (!loRaFishGuestTravelAnimation.active) {
       display.setColor(UIColor::secondary_txt);
-      display.drawTextCentered(w/2,27,loragotchiDXGuest.guestName);
+      drawLoRaFishName(display,27,loragotchiDXGuest.guestName,sizeof(loragotchiDXGuest.guestName));
     }
   } else if (loRaFishGuestTravelAnimation.active && !loRaFishGuestTravelAnimation.entering) {
     loRaFishDrawTravelAnimation(display,loRaFishGuestTravelAnimation);
@@ -2685,7 +2753,23 @@ display.fillRect(2,h-15,w-4,1);
 display.drawTextCentered(w/2,h-9,"Sleeping");
 }
 
+static void drawLoRaFishNameNotice(DisplayDriver& display) {
+  const int x = display.width() / 2;
+  drawLoRaFishHeader(display, "GET FOUND BY FRIENDS", "");
+  display.setColor(UIColor::primary_txt);
+  display.drawTextCentered(x, 18, "Add a fish emoji to");
+  display.drawTextCentered(x, 27, "your MeshCore name");
+  display.drawTextCentered(x, 36, "to appear as a");
+  display.drawTextCentered(x, 45, "LoRagotchi-DX tank.");
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(x, 56, "CLICK TO DISMISS");
+}
+
 static void drawLoRaFish(DisplayDriver& display, UITask* task) {
+  if (loRaFishNameNotice) {
+    drawLoRaFishNameNotice(display);
+    return;
+  }
   if (loRaFishValuePicker.active()) {
     drawLoRaFishValuePicker(display);
     return;
@@ -2946,6 +3030,7 @@ public:
   int render(DisplayDriver& display) override {
 #ifdef LORAFISH_UI
     drawLoRaFish(display, _task);
+    if (loRaFishNameNotice) return 2000;
     // Static pages (menus, stats, pairing) only need an occasional redraw; button
     // presses reset _next_refresh in checkDisplayOn(), so they stay responsive.
     if (loRaFishPage == 0) {
@@ -3273,6 +3358,10 @@ public:
 
   bool handleInput(char c) override {
 #ifdef LORAFISH_UI
+    if (loRaFishNameNotice) {
+      loRaFishNameNotice = false;
+      return true;  // The dismissal gesture must not also navigate or act.
+    }
     const bool previous = c == KEY_PREV || c == KEY_LEFT;
     if (!(previous || c == KEY_ENTER || c == KEY_NEXT || c == KEY_RIGHT)) return true;
     if (loRaFishValuePicker.active()) {
@@ -3313,8 +3402,7 @@ public:
       }
     } else if (loRaFishPage == LORAFISH_DX_CONTACT_PAGE) {
       if (!loragotchiDXHome.away && !loragotchiDXHome.pending && !loragotchiDXHome.committing) {
-        const int n = the_mesh.getNumContacts();
-        if (n > 0) loRaFishDXContactIndex = (loRaFishDXContactIndex + (previous ? n - 1 : 1)) % n;
+        moveLoRaFishDXContact(previous);
       }
     } else {
       loRaFishPage = move(loRaFishPage, LORAFISH_PAGE_COUNT);
@@ -3504,6 +3592,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _node_prefs = node_prefs;
 #ifdef LORAFISH_UI
   loRaFishMeshNodeName = node_prefs ? node_prefs->node_name : nullptr;
+  beginLoRaFishNameNotice();
 #endif
 
   if (_display != NULL) {
@@ -3553,7 +3642,11 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 }
 
 void UITask::showAlert(const char* text, int duration_millis) {
-  strcpy(_alert, text);
+#ifdef LORAFISH_UI
+  LoRaFishText::display(_alert, sizeof(_alert), text, sizeof(_alert) - 1);
+#else
+  snprintf(_alert, sizeof(_alert), "%s", text);
+#endif
   _alert_expiry = millis() + duration_millis;
 }
 
@@ -3785,7 +3878,8 @@ static uint8_t loRaFishStaticFrame[42];
 static bool shouldRenderLoRaFish(bool homeVisible, bool alertVisible, bool forced) {
   // Only genuinely static menu pages. Aquarium (even sleeping/dimmed), Stats,
   // clock, pairing, DX and RF/GNSS retain their existing refresh cadence.
-  const bool staticPage = loRaFishPage == 5 || (loRaFishPage >= 8 && loRaFishPage <= 18);
+  const bool staticPage = loRaFishNameNotice || loRaFishPage == 5 ||
+      (loRaFishPage >= 8 && loRaFishPage <= 18);
   if (!homeVisible || alertVisible || !staticPage) {
     loRaFishStaticFrameValid = false;
     return true;
@@ -3793,6 +3887,7 @@ static bool shouldRenderLoRaFish(bool homeVisible, bool alertVisible, bool force
   uint8_t settings[LORAFISH_SETTINGS_SIZE];
   encodeLoRaFishSettings(settings);
   uint8_t frame[] = {
+      (uint8_t)loRaFishNameNotice,
       loRaFishPage, (uint8_t)loRaFishOption, loRaFishDisplayOption, loRaFishTimeField,
       loRaFishTimeoutField, loRaFishSoundField, loRaFishColorField,
       (uint8_t)loRaFishValuePicker.active(), (uint8_t)loRaFishValuePicker.key(),
@@ -4200,6 +4295,11 @@ char UITask::handleLongPress(char c) {
     checkDisplayOn(0);
     return 0;
   }
+  if (curr == home && loRaFishNameNotice) {
+    loRaFishNameNotice = false;
+    checkDisplayOn(0);
+    return 0;
+  }
   if (curr != home) return c;  // Select belongs to the visible non-pet screen.
   if (millis() < _alert_expiry) return 0;
   checkDisplayOn(0);
@@ -4332,19 +4432,21 @@ char UITask::handleLongPress(char c) {
   }
   if (loRaFishPage == LORAFISH_DX_CONTACT_PAGE) {
     ContactInfo c;
-    if(!loRaFishDXGetContact(c)) { showAlert("No DX contact",700); return 0; }
     uint32_t ack=0,to=0;
     if(loragotchiDXHome.away || loragotchiDXHome.committing) {
       // Recall the exact contact used for the visit, even if ARRIVED confirmation is still pending.
       // This provides a safe recovery path if the final confirmation is lost.
-      ContactInfo dest;
-      if(the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + loragotchiDXHome.destinationIndex,dest)) c=dest;
+      if (!loRaFishDXDestination(c)) {
+        showAlert("Tank not in contacts", 900);
+        return 0;
+      }
       char msg[80]; snprintf(msg,sizeof(msg),"LFG1|RECALL|%lu|%lu",
         (unsigned long)loragotchiDXHome.txid,(unsigned long)loragotchiDXHome.fishid);
       int r=the_mesh.sendMessage(c,the_mesh.getRTCClock()->getCurrentTime(),0,msg,ack,to);
       Serial.printf("[LFG1 M2] RECALL TX result=%d\n",r);
       showAlert("Recalling fish",700);
     } else if(!loragotchiDXHome.pending && !loragotchiDXHome.committing) {
+      if (!loRaFishDXGetContact(c)) { showAlert("No fish tanks", 900); return 0; }
       // Sleeping fish stay home.  Recall remains available above so an
       // already-away fish can always be recovered at night.
       if (loRaFishIsSleeping()) {
@@ -4363,13 +4465,19 @@ char UITask::handleLongPress(char c) {
       }
       loragotchiDXHome.txid=(uint32_t)(millis() ^ loragotchiDXHome.fishid);
       loragotchiDXHome.destinationIndex=loRaFishDXContactIndex;
-      strncpy(loragotchiDXHome.destinationName,c.name,sizeof(loragotchiDXHome.destinationName)-1);
+      LoRaFishText::rawPrefix(loragotchiDXHome.destinationName,
+          sizeof(loragotchiDXHome.destinationName), c.name, sizeof(c.name));
       char msg[112]; snprintf(msg,sizeof(msg),"LFG1|REQ|%lu|%lu|%u|%s",
         (unsigned long)loragotchiDXHome.txid,(unsigned long)loragotchiDXHome.fishid,
-        (unsigned)fish.evolution,loRaFishDisplayName());
+        (unsigned)fish.evolution,loRaFishProtocolName());
       int r=the_mesh.sendMessage(c,the_mesh.getRTCClock()->getCurrentTime(),0,msg,ack,to);
       loragotchiDXHome.pending=(r>=0);
-      if(loragotchiDXHome.pending) { loRaFishDXRequestStarted=millis(); loragotchiDXSave(); }
+      if(loragotchiDXHome.pending) {
+        memcpy(loRaFishDXDestinationKey, c.id.pub_key, PUB_KEY_SIZE);
+        loRaFishDXDestinationKnown = true;
+        loRaFishDXRequestStarted=millis();
+        loragotchiDXSave();
+      }
       Serial.printf("[LFG1 M2] REQ TX result=%d to='%s'\n",r,c.name);
       showAlert(r>=0?"DX request sent":"DX send failed",800);
     }
@@ -4426,6 +4534,10 @@ char UITask::handleDoubleClick(char c) {
     return 0;
   }
   checkDisplayOn(0);
+  if (curr == home && loRaFishNameNotice) {
+    loRaFishNameNotice = false;
+    return 0;
+  }
   if (curr != home) {
     gotoHomeScreen();
     return 0;
@@ -4467,6 +4579,13 @@ char UITask::handleDoubleClick(char c) {
 
 char UITask::handleTripleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: triple click triggered");
+#ifdef LORAFISH_UI
+  if (loRaFishNameNotice) {
+    if (_display && _display->isOn() && curr == home) loRaFishNameNotice = false;
+    checkDisplayOn(0);
+    return 0;
+  }
+#endif
   checkDisplayOn(c);
   toggleBuzzer();
   c = 0;
