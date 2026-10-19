@@ -46,6 +46,9 @@ The main screens advance in this order:
 7. RF Monitor
 8. GNSS
 
+On **DX Visit**, short-click continues to **Options**; long-press opens its contact
+picker. Double-click in that picker returns to DX Visit without sending.
+
 Short-click on **Options** moves the selection. Long-press opens the selected item.
 In a multi-field menu, click to choose a field and hold to edit it. In its value
 picker, click through candidates and hold to save; double-click cancels the pending
@@ -186,9 +189,9 @@ During scheduled sleep the fish displays as sleeping. RF events are still counte
 
 ## DX Visits
 
-Open **DX Visit** to choose a compatible LoRaGotchi DX peer from the contact list. Short-click cycles through contacts. Long-press sends a visit request when the local fish is awake. The peers exchange request, acknowledgment, commit, and arrival-confirmation messages. Once accepted, the visitor appears in the other aquarium while the host fish continues its own behavior.
+On the **DX Visit** overview, long-press to open the contact picker. Opening it sends nothing. In the picker, short-click cycles through compatible LoRaGotchi DX peers and a separate long-press sends a visit request when the local fish is awake. The peers exchange request, acknowledgment, commit, and arrival-confirmation messages. Once accepted, the visitor appears in the other aquarium while the host fish continues its own behavior.
 
-When your fish is away, long-press recalls it home. Double-click on DX Visit returns to the aquarium, like Back from the other main screens. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
+When your fish is away, open the DX picker and long-press again to recall it home. Double-click in the picker returns to the overview without sending or recalling. From the overview, short-click continues to Options and double-click returns to the aquarium, like Back from the other main screens. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
 
 Color-capable displays render visitor Scales, Body/Border, and Eyes traits independently. Mono traits use the display's foreground color; monochrome displays render every trait in their foreground color. A fish returning from a monochrome host briefly animates back into its saved home colors on a color display.
 

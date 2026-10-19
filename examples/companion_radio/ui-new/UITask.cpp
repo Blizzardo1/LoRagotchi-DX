@@ -164,6 +164,7 @@ static constexpr uint8_t LORAFISH_RESET_CONFIRM_PAGE = 17;
 static PetResetConfirmation loRaFishResetConfirmation;
 static constexpr uint8_t LORAFISH_ADVERT_PAGE = 18;
 static AdvertMenu loRaFishAdvertMenu;
+static constexpr uint8_t LORAFISH_DX_CONTACT_PAGE = 19;
 static int8_t loRaFishRfHistory[48] = {0};
 static uint8_t loRaFishRfHistoryCount = 0;
 static uint32_t loRaFishRfSeenSeq = 0;
@@ -1979,6 +1980,7 @@ static bool loRaFishDXGetContact(ContactInfo& c) {
 
 static void drawLoRaFishDX(DisplayDriver& display) {
   const int w=display.width(),h=display.height();
+  const bool choosingContact = loRaFishPage == LORAFISH_DX_CONTACT_PAGE;
   char tb[8],db[24]; loRaFishClock(tb,sizeof(tb),db,sizeof(db));
   drawLoRaFishHeader(display,"DX VISIT",tb);
   display.setColor(UIColor::primary_txt);
@@ -1987,7 +1989,6 @@ static void drawLoRaFishDX(DisplayDriver& display) {
     display.drawTextCentered(w/2,27,"FISH AWAY");
     display.setColor(UIColor::secondary_txt);
     display.drawTextCentered(w/2,39,loragotchiDXHome.destinationName);
-    display.drawTextCentered(w/2,h-9,"2:BACK L:RECALL");
   } else if(loragotchiDXHome.committing) {
     display.drawTextCentered(w/2,28,"DELIVERING...");
     display.setColor(UIColor::secondary_txt);
@@ -2002,17 +2003,28 @@ static void drawLoRaFishDX(DisplayDriver& display) {
     display.drawTextCentered(w/2,28,loragotchiDXHome.pending?"CALLING...":"NO REPLY - RETRY");
     display.setColor(UIColor::secondary_txt);
     display.drawTextCentered(w/2,40,loragotchiDXHome.destinationName);
+  } else if (!choosingContact) {
+    display.drawTextCentered(w/2,27,"Visit a friend");
+    display.setColor(UIColor::secondary_txt);
+    display.drawTextCentered(w/2,39,"Hold to choose");
   } else {
     ContactInfo c;
     if(loRaFishDXGetContact(c)) {
       display.drawTextCentered(w/2,27,c.name);
-      char b[28]; snprintf(b,sizeof(b),"%lu/%d  CLICK:NEXT",
+      char b[28]; snprintf(b,sizeof(b),"%lu/%d",
           (unsigned long)(loRaFishDXContactIndex+1),the_mesh.getNumContacts());
       display.setColor(UIColor::secondary_txt);
       display.drawTextCentered(w/2,39,b);
-      display.drawTextCentered(w/2,h-9,"2:BACK L:SEND");
     } else display.drawTextCentered(w/2,31,"NO CONTACTS");
   }
+  display.setColor(UIColor::secondary_txt);
+  const char* hint = "1:NEXT 2:BACK L:OPEN";
+  if (choosingContact) {
+    if (loragotchiDXHome.away || loragotchiDXHome.committing) hint = "2:BACK L:RECALL";
+    else if (loragotchiDXHome.pending) hint = "2:BACK";
+    else hint = "1:NEXT 2:BACK L:SEND";
+  }
+  display.drawTextCentered(w/2,h-9,hint);
 }
 
 static void drawLoRaFishRFMonitor(DisplayDriver& display, UITask* task) {
@@ -2531,6 +2543,7 @@ static void drawLoRaFish(DisplayDriver& display, UITask* task) {
     case 2: drawLoRaFishClockPage(display,task); break;
     case 3: drawLoRaFishPairing(display); break;
     case 4: drawLoRaFishDX(display); break;
+    case LORAFISH_DX_CONTACT_PAGE: drawLoRaFishDX(display); break;
     case 5: drawLoRaFishOptions(display,task); break;
     case 6: drawLoRaFishRFMonitor(display,task); break;
     case 7: drawLoRaFishGNSS(display,task); break;
@@ -2788,7 +2801,8 @@ public:
       return loRaFishSimulationMode ? 250 : 100;
 #endif
     }
-    if (loRaFishPage == 2 || loRaFishPage == 4 || loRaFishPage == 6) return 1000;  // clock, DX, RF
+    if (loRaFishPage == 2 || loRaFishPage == 4 ||
+        loRaFishPage == LORAFISH_DX_CONTACT_PAGE || loRaFishPage == 6) return 1000;  // clock, DX, RF
     return 2000;                                     // static pages
 #else
     display.setColor(UIColor::title_bkg);
@@ -3141,9 +3155,11 @@ public:
         loRaFishGuessHigher = !loRaFishGuessHigher;
         loRaFishGuessResultShown = false;
       }
-    } else if (loRaFishPage == 4 && !loragotchiDXHome.away && !loragotchiDXHome.pending) {
-      const int n = the_mesh.getNumContacts();
-      if (n > 0) loRaFishDXContactIndex = (loRaFishDXContactIndex + (previous ? n - 1 : 1)) % n;
+    } else if (loRaFishPage == LORAFISH_DX_CONTACT_PAGE) {
+      if (!loragotchiDXHome.away && !loragotchiDXHome.pending && !loragotchiDXHome.committing) {
+        const int n = the_mesh.getNumContacts();
+        if (n > 0) loRaFishDXContactIndex = (loRaFishDXContactIndex + (previous ? n - 1 : 1)) % n;
+      }
     } else {
       loRaFishPage = move(loRaFishPage, LORAFISH_PAGE_COUNT);
     }
@@ -4117,6 +4133,12 @@ char UITask::handleLongPress(char c) {
   }
 
   if (loRaFishPage == 4) {
+    // The overview stays in the main-page route; only Select enters contact browsing.
+    loRaFishPage = LORAFISH_DX_CONTACT_PAGE;
+    _next_refresh = 0;
+    return 0;
+  }
+  if (loRaFishPage == LORAFISH_DX_CONTACT_PAGE) {
     ContactInfo c;
     if(!loRaFishDXGetContact(c)) { showAlert("No DX contact",700); return 0; }
     uint32_t ack=0,to=0;
@@ -4229,6 +4251,7 @@ char UITask::handleDoubleClick(char c) {
     return 0;
   }
   switch (loRaFishPage) {
+    case LORAFISH_DX_CONTACT_PAGE: loRaFishPage = 4; break;
     case 6: returnToLoRaFishOptions(LoRaFishOption::RF); break;
     case 7: returnToLoRaFishOptions(LoRaFishOption::GNSS); break;
     case 10: returnToLoRaFishOptions(LoRaFishOption::Schedule); break;
