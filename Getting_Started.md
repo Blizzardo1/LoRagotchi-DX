@@ -50,13 +50,30 @@ Short-click on **Options** moves the selection. Long-press opens the selected it
 The main **Options** menu contains:
 
 - **Display**: screen timeout, brightness, firmware theme, and aquarium rendering speed. Color displays also offer fish color settings.
-- **Reset pet**: start a new egg and reset pet progress. Color displays then open the starting-trait picker; monochrome displays start with monochrome traits. Display and schedule preferences are kept.
+- **Reset pet**: opens a confirmation screen with **Cancel** selected. Nothing is reset merely by opening it. See the reset controls below.
 - **RF monitor**: view recent received signal information and activity.
 - **GNSS monitor**: inspect GNSS status; long-press toggles GNSS where supported.
 - **Schedule & time**: configure sleep, wake, and UTC offset.
 - **Guess game**: play five rounds of higher/lower to earn happiness when mesh activity is quiet.
 - **Sound**: configure buzzer volume, wake/sleep cues, and message tone on buzzer-equipped builds.
 - **Breed with visitor**: appears when the local fish and a visiting fish are both Adult or Elder and no offspring egg is already pending.
+
+### Resetting your pet safely
+
+Open **Options → Reset pet** with a long-press. The screen asks **"Start a new egg?"**
+and warns **"Pet progress & eggs will be lost forever."**
+
+- **Cancel** is selected every time the screen opens. Long-press to cancel.
+- Short-click to select **Yes, reset pet**, then release and long-press to confirm.
+- Double-click cancels from either choice and returns to Options.
+- If the display turns off or another screen/alert interrupts the prompt, the
+  confirmation is cancelled. Waking the display does not reset the pet.
+
+Confirming starts a new egg at generation 1, clears pet progress and any pending
+offspring egg, and cannot be undone. Color displays then open the starting-trait
+picker; monochrome displays start with monochrome traits. Display, schedule, and
+MeshCore settings, contacts, and channels are kept. Cancelling leaves your pet
+untouched; normal gameplay continues while the prompt is open.
 
 ### Guess game
 
