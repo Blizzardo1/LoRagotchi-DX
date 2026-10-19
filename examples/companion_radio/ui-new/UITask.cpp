@@ -1,4 +1,5 @@
 #include "UITask.h"
+#include "PetResetConfirmation.h"
 #include "../MyMesh.h"
 #ifdef ESP32
 #include <SPIFFS.h>
@@ -156,6 +157,8 @@ static uint8_t loRaFishTimeField = 0;
 static uint8_t loRaFishTimeoutField = 0;
 static uint8_t loRaFishSoundField = 0;
 static constexpr uint8_t LORAFISH_PAGE_COUNT = 8;
+static constexpr uint8_t LORAFISH_RESET_CONFIRM_PAGE = 17;
+static PetResetConfirmation loRaFishResetConfirmation;
 static int8_t loRaFishRfHistory[48] = {0};
 static uint8_t loRaFishRfHistoryCount = 0;
 static uint32_t loRaFishRfSeenSeq = 0;
@@ -369,7 +372,6 @@ static bool loRaFishCanBreed() {
 #endif
 }
 static unsigned long loRaFishAdvertLastMs = 0;
-static unsigned long loRaFishResetArmedUntil = 0;
 static uint8_t loRaFishAdvertOptionIndex() {
 #ifdef PIN_BUZZER
   return 7;
@@ -1598,13 +1600,34 @@ static void drawLoRaFishOptions(DisplayDriver& display, UITask* task) {
   display.setColor(UIColor::secondary_txt);
   const uint8_t o=loRaFishOption;
   if (o==0) display.drawTextCentered(w/2,56,"LONG:DISPLAY");
-  else if (o==1) display.drawTextCentered(w/2,56,"LONG x2:RESET");
+  else if (o==1) display.drawTextCentered(w/2,56,"LONG:OPEN");
   else if (o==2 || o==3) display.drawTextCentered(w/2,56,"LONG:OPEN");
   else if (o==4) display.drawTextCentered(w/2,56,"LONG:SCHEDULE");
   else if (o==5) display.drawTextCentered(w/2,56,"LONG:PLAY GAME");
   else if (o==loRaFishAdvertOptionIndex()) display.drawTextCentered(w/2,56,"LONG:ADVERT");
   else if (o==loRaFishBreedOptionIndex()) display.drawTextCentered(w/2,56,"LONG:BREED");
   else display.drawTextCentered(w/2,56,"LONG:SOUNDS");
+}
+
+static void cancelLoRaFishReset() {
+  loRaFishResetConfirmation.cancel();
+  loRaFishPage = 5;
+  loRaFishOption = 1;
+}
+
+static void drawLoRaFishResetConfirmation(DisplayDriver& display) {
+  const int w = display.width();
+  drawLoRaFishHeader(display, "Start a new egg?", "");
+  display.setColor(UIColor::primary_txt);
+  display.drawTextCentered(w/2, 17, "Pet progress & eggs");
+  display.drawTextCentered(w/2, 26, "will be lost forever.");
+  const bool reset = loRaFishResetConfirmation.resetSelected();
+  display.setCursor(3, 37);
+  display.print(reset ? "  Cancel" : "> Cancel");
+  display.setCursor(3, 46);
+  display.print(reset ? "> Yes, reset pet" : "  Yes, reset pet");
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(w/2, 56, "CLICK:MOVE HOLD:OK");
 }
 
 static void startLoRaFishGuessGame() {
@@ -2446,6 +2469,7 @@ static void drawLoRaFish(DisplayDriver& display, UITask* task) {
     case 13: drawLoRaFishBrightnessMenu(display); break;
     case 15: drawLoRaFishRenderSpeedMenu(display); break;
     case 16: drawLoRaFishGuessGame(display); break;
+    case LORAFISH_RESET_CONFIRM_PAGE: drawLoRaFishResetConfirmation(display); break;
   #ifdef PIN_BUZZER
     case 14: drawLoRaFishSoundMenu(display); break;
   #endif
@@ -3005,6 +3029,13 @@ public:
 
   bool handleInput(char c) override {
 #ifdef LORAFISH_UI
+    if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE) {
+      if (c == KEY_ENTER || c == KEY_NEXT || c == KEY_PREV ||
+          c == KEY_LEFT || c == KEY_RIGHT) {
+        loRaFishResetConfirmation.toggle();
+      }
+      return true;
+    }
     // ThinkNode's single user button reports a short click as KEY_NEXT.
     // Joystick-style targets may report KEY_ENTER, so accept either.
     // A click on the aquarium clears the poop when there is some, and
@@ -3485,6 +3516,9 @@ void UITask::userLedHandler() {
 }
 
 void UITask::setCurrScreen(UIScreen* c) {
+#ifdef LORAFISH_UI
+  if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE && c != home) cancelLoRaFishReset();
+#endif
   curr = c;
   _next_refresh = 100;
 }
@@ -3541,6 +3575,12 @@ static void drawUIAlertBox(DisplayDriver& display, const char* alert) {
 
 void UITask::loop() {
 #ifdef LORAFISH_UI
+  // A hidden/interrupted prompt must never leave a destructive choice armed.
+  if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE &&
+      (!_display || !_display->isOn() || curr != home || millis() < _alert_expiry)) {
+    cancelLoRaFishReset();
+    _next_refresh = 0;
+  }
   tickLoRaFish();
 #if defined(LORAFISH_SERIAL_TEST)
   {
@@ -3583,6 +3623,7 @@ void UITask::loop() {
   loRaFishObserveTravelTransitions();
   if (loragotchiDXHome.returned) {
     if (!loRaFishReturnNavigationHandled) {
+      loRaFishResetConfirmation.cancel();
       loRaFishReturnNavigationHandled=true;
       loRaFishPage=0;
       _next_refresh=0;
@@ -3648,6 +3689,7 @@ void UITask::loop() {
       if (k=='d' || k=='D') right=true;
     }
     if (keys.esc || keys.backspace) {
+      loRaFishResetConfirmation.cancel();
       loRaFishPage=0;  // Back to aquarium, never advances the menu.
       _next_refresh=0;
       if (_display) loRaFishRegisterDisplayActivity(*_display);
@@ -3656,11 +3698,15 @@ void UITask::loop() {
     } else if (right || down) {
       c=checkDisplayOn(KEY_NEXT);
     } else if (left || up) {
-      // Existing LoRaFish UI is forward-only; reverse is handled locally.
-      if (loRaFishPage==0) loRaFishPage=LORAFISH_PAGE_COUNT-1;
-      else --loRaFishPage;
-      _next_refresh=0;
-      if (_display) loRaFishRegisterDisplayActivity(*_display);
+      if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE) {
+        c=checkDisplayOn(KEY_PREV);
+      } else {
+        // Existing LoRaFish UI is forward-only; reverse is handled locally.
+        if (loRaFishPage==0) loRaFishPage=LORAFISH_PAGE_COUNT-1;
+        else --loRaFishPage;
+        _next_refresh=0;
+        if (_display) loRaFishRegisterDisplayActivity(*_display);
+      }
     }
   }
 #endif
@@ -3838,6 +3884,9 @@ void UITask::loop() {
 #else
     if (millis() > _auto_off) {
 #endif
+#ifdef LORAFISH_UI
+      if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE) cancelLoRaFishReset();
+#endif
       _display->turnOff();
     }
 #endif
@@ -3872,6 +3921,9 @@ void UITask::loop() {
 char UITask::checkDisplayOn(char c) {
   if (_display != NULL) {
     if (!_display->isOn()) {
+#ifdef LORAFISH_UI
+      if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE) cancelLoRaFishReset();
+#endif
       _display->turnOn();   // turn display on and consume event
       c = 0;
     }
@@ -3894,6 +3946,22 @@ char UITask::handleLongPress(char c) {
   }
 
 #ifdef LORAFISH_UI
+  if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE) {
+    const bool visible = _display && _display->isOn() && curr == home &&
+                         millis() >= _alert_expiry;
+    const bool reset = loRaFishResetConfirmation.confirm(visible);
+    cancelLoRaFishReset();
+    checkDisplayOn(0);  // Refresh the inactivity timer; a sleeping screen only wakes.
+    if (reset) {
+      resetLoRaFishPet();
+      loRaFishPage = loRaFishNeedsAppearanceSetup ? 9 : 0;
+      loRaFishOption = 0;
+      loRaFishHatchMelodyPlayed = false;
+      if (!loRaFishNeedsAppearanceSetup) showAlert("New egg!", 900);
+    }
+    _next_refresh = 0;
+    return 0;
+  }
   if (_display != NULL && _display->isOn()) loRaFishRegisterDisplayActivity(*_display);
   if (loRaFishPage == 0) {
     if (loRaFishPoopCount > 0 && !loRaFishCleaning) {
@@ -4022,19 +4090,14 @@ char UITask::handleLongPress(char c) {
       _next_refresh = 0;
 
     } else if (loRaFishOption == 1) {
-      // Reset is destructive, so it needs a second long press within 5 seconds.
-      if (millis() >= loRaFishResetArmedUntil) {
-        loRaFishResetArmedUntil = millis() + 5000UL;
-        showAlert("Long press again to reset",1200);
-        _next_refresh = 0;
-        return 0;
+      // Opening the prompt never changes pet state. A hidden screen only wakes.
+      const bool visible = _display && _display->isOn() && curr == home &&
+                           millis() >= _alert_expiry;
+      checkDisplayOn(0);
+      if (visible) {
+        loRaFishResetConfirmation.open();
+        loRaFishPage = LORAFISH_RESET_CONFIRM_PAGE;
       }
-      loRaFishResetArmedUntil = 0;
-      resetLoRaFishPet();
-      loRaFishPage = loRaFishNeedsAppearanceSetup ? 9 : 0;
-      loRaFishOption = 0;
-      loRaFishHatchMelodyPlayed = false;
-      if (!loRaFishNeedsAppearanceSetup) showAlert("New egg!",900);
       _next_refresh = 0;
 
     } else if (loRaFishOption == 2) {
@@ -4092,6 +4155,11 @@ char UITask::handleLongPress(char c) {
 char UITask::handleDoubleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: double-click triggered");
 #ifdef LORAFISH_UI
+  if (loRaFishPage == LORAFISH_RESET_CONFIRM_PAGE) {
+    cancelLoRaFishReset();
+    checkDisplayOn(0);
+    return 0;
+  }
   if (_display != NULL && _display->isOn()) loRaFishRegisterDisplayActivity(*_display);
   if (loRaFishPage == 1 || loRaFishPage == 2 || loRaFishPage == 3) {
     loRaFishPage = 0;  // Stats, clock or pairing -> Aquarium
