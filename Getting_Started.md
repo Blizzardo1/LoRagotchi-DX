@@ -6,6 +6,23 @@ It's actually built straight on the stock meshcore (1.17.1 at the time of writin
 
 For supported boards and PlatformIO build commands, see the [README](README.md#supported-loragotchi-targets-in-this-tree). This guide describes the LoRaFish companion UI and behavior.
 
+## BLE pairing PIN
+
+With the default build settings and no saved PIN, LoRagotchi selects a random
+six-digit PIN once per boot from the same radio-noise RNG used for device
+identities. Use the active PIN shown on the device, not the old shared `123456`.
+The automatic PIN is not written to saved preferences. A display initialization
+failure does not switch back to a shared PIN; restore the display before pairing.
+
+An existing **nonzero saved PIN always wins**, including a deliberately saved
+`123456`. Otherwise, a non-default `BLE_PIN_CODE` build setting is honored.
+The inherited build value `123456` means automatic selection, not a fixed PIN.
+To return to automatic mode, clear the saved PIN to `0` using your MeshCore
+management tool, keep the default build setting, and restart. Choosing a fixed
+PIN is optional. Existing BLE bonds are not deleted or reset by this change;
+a bonded phone may reconnect without asking for a PIN again. USB-only builds
+are unchanged.
+
 ## First Use
 
 At startup, LoRagotchi automatically joins **`#loragotchi-dx`** using the standard
