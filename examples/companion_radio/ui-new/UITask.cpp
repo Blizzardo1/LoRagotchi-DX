@@ -5,6 +5,7 @@
 #include "LoRaFishHappiness.h"
 #include "LoRaFishText.h"
 #include "../MyMesh.h"
+#include "../LoRagotchiChannelStatus.h"
 #ifdef ESP32
 #include <SPIFFS.h>
 #endif
@@ -101,6 +102,18 @@ static mesh::RTCClock* loRaFishRTC = nullptr;
 
 static const char* loRaFishMeshNodeName = nullptr;
 static bool loRaFishNameNotice = false;
+static bool loRaFishChannelNotice = false;
+
+static void beginLoRaFishChannelNotice() {
+  loRaFishChannelNotice = LoRagotchiChannel::startupResult == LoRagotchiChannel::Result::Full;
+}
+
+static bool dismissLoRaFishNotice() {
+  // One gesture dismisses one notice, without navigating, saving or sending.
+  if (loRaFishChannelNotice) { loRaFishChannelNotice = false; return true; }
+  if (loRaFishNameNotice) { loRaFishNameNotice = false; return true; }
+  return false;
+}
 
 static void beginLoRaFishNameNotice() {
   loRaFishNameNotice = !LoRaFishText::hasFish(loRaFishMeshNodeName, 32);
@@ -2783,6 +2796,18 @@ display.fillRect(2,h-15,w-4,1);
 display.drawTextCentered(w/2,h-9,"Sleeping");
 }
 
+static void drawLoRaFishChannelNotice(DisplayDriver& display) {
+  const int x = display.width() / 2;
+  display.setTextSize(1);
+  display.setColor(UIColor::primary_txt);
+  display.drawTextCentered(x, 2, "#loragotchi-dx");
+  display.drawTextCentered(x, 14, "Could not join");
+  display.drawTextCentered(x, 26, "No free channel slot");
+  display.drawTextCentered(x, 38, "Channels unchanged");
+  display.setColor(UIColor::secondary_txt);
+  display.drawTextCentered(x, 56, "CLICK TO DISMISS");
+}
+
 static void drawLoRaFishNameNotice(DisplayDriver& display) {
   const int x = display.width() / 2;
   drawLoRaFishHeader(display, "GET FOUND BY FRIENDS", "");
@@ -2796,6 +2821,10 @@ static void drawLoRaFishNameNotice(DisplayDriver& display) {
 }
 
 static void drawLoRaFish(DisplayDriver& display, UITask* task) {
+  if (loRaFishChannelNotice) {
+    drawLoRaFishChannelNotice(display);
+    return;
+  }
   if (loRaFishNameNotice) {
     drawLoRaFishNameNotice(display);
     return;
@@ -3060,7 +3089,7 @@ public:
   int render(DisplayDriver& display) override {
 #ifdef LORAFISH_UI
     drawLoRaFish(display, _task);
-    if (loRaFishNameNotice) return 2000;
+    if (loRaFishChannelNotice || loRaFishNameNotice) return 2000;
     // Static pages (menus, stats, pairing) only need an occasional redraw; button
     // presses reset _next_refresh in checkDisplayOn(), so they stay responsive.
     if (loRaFishPage == 0) {
@@ -3388,8 +3417,7 @@ public:
 
   bool handleInput(char c) override {
 #ifdef LORAFISH_UI
-    if (loRaFishNameNotice) {
-      loRaFishNameNotice = false;
+    if (dismissLoRaFishNotice()) {
       return true;  // The dismissal gesture must not also navigate or act.
     }
     const bool previous = c == KEY_PREV || c == KEY_LEFT;
@@ -3622,6 +3650,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _node_prefs = node_prefs;
 #ifdef LORAFISH_UI
   loRaFishMeshNodeName = node_prefs ? node_prefs->node_name : nullptr;
+  beginLoRaFishChannelNotice();
   beginLoRaFishNameNotice();
 #endif
 
@@ -3908,7 +3937,7 @@ static uint8_t loRaFishStaticFrame[48];
 static bool shouldRenderLoRaFish(bool homeVisible, bool alertVisible, bool forced) {
   // Only genuinely static menu pages. Aquarium (even sleeping/dimmed), Stats,
   // clock, pairing, DX and RF/GNSS retain their existing refresh cadence.
-  const bool staticPage = loRaFishNameNotice || loRaFishPage == 5 ||
+  const bool staticPage = loRaFishChannelNotice || loRaFishNameNotice || loRaFishPage == 5 ||
       (loRaFishPage >= 8 && loRaFishPage <= 18);
   if (!homeVisible || alertVisible || !staticPage) {
     loRaFishStaticFrameValid = false;
@@ -3917,7 +3946,7 @@ static bool shouldRenderLoRaFish(bool homeVisible, bool alertVisible, bool force
   uint8_t settings[LORAFISH_SETTINGS_SIZE];
   encodeLoRaFishSettings(settings);
   uint8_t frame[] = {
-      (uint8_t)loRaFishNameNotice,
+      (uint8_t)loRaFishChannelNotice, (uint8_t)loRaFishNameNotice,
       loRaFishPage, (uint8_t)loRaFishOption, loRaFishDisplayOption, loRaFishTimeField,
       loRaFishTimeoutField, loRaFishSoundField, loRaFishColorField,
       (uint8_t)loRaFishValuePicker.active(), (uint8_t)loRaFishValuePicker.key(),
@@ -4327,8 +4356,7 @@ char UITask::handleLongPress(char c) {
     checkDisplayOn(0);
     return 0;
   }
-  if (curr == home && loRaFishNameNotice) {
-    loRaFishNameNotice = false;
+  if (curr == home && dismissLoRaFishNotice()) {
     checkDisplayOn(0);
     return 0;
   }
@@ -4570,8 +4598,7 @@ char UITask::handleDoubleClick(char c) {
     return 0;
   }
   checkDisplayOn(0);
-  if (curr == home && loRaFishNameNotice) {
-    loRaFishNameNotice = false;
+  if (curr == home && dismissLoRaFishNotice()) {
     return 0;
   }
   if (curr != home) {
@@ -4616,8 +4643,8 @@ char UITask::handleDoubleClick(char c) {
 char UITask::handleTripleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: triple click triggered");
 #ifdef LORAFISH_UI
-  if (loRaFishNameNotice) {
-    if (_display && _display->isOn() && curr == home) loRaFishNameNotice = false;
+  if (loRaFishChannelNotice || loRaFishNameNotice) {
+    if (_display && _display->isOn() && curr == home) dismissLoRaFishNotice();
     checkDisplayOn(0);
     return 0;
   }
