@@ -56,7 +56,12 @@ jobs:
         env:
           BUILD_ENV: ${{ matrix.environment }}
           BUILD_TARGET: ${{ matrix.target }}
-        run: pio run -e "$BUILD_ENV" -t "$BUILD_TARGET" -j 2
+        run: |
+          if [ "$BUILD_TARGET" = create_uf2 ]; then
+            pio run -e "$BUILD_ENV" -t create_uf2 -j 2
+          else
+            pio run -e "$BUILD_ENV" -j 2
+          fi
       - name: Stage firmware and reproducible hardware metadata
         env:
           BUILD_ENV: ${{ matrix.environment }}
