@@ -34,7 +34,9 @@ for row in manifest['targets']:
             assert candidate[key] == value, (name, key)
     assert flags[:len(parent['build_flags'])] == parent['build_flags'], name
     assert flags[len(parent['build_flags']):] == ['-D LORAFISH_UI=1',
-        '-D LORAGOTCHI_EXPERIMENTAL=1', '-D AUTO_OFF_MILLIS=30000'], name
+        '-D LORAGOTCHI_EXPERIMENTAL=1', '-D AUTO_OFF_MILLIS=30000'] + [
+        '-UENV_INCLUDE_' + sensor for sensor in row.get('disabled_optional_sensors', [])], name
+    assert 'GPS' not in row.get('disabled_optional_sensors', []), name
     assert row['target'] == ('create_uf2' if '-D NRF52_PLATFORM' in flags else 'build'), name
 assert seen == {s[4:] for s in config if s.startswith('env:') and
                 '-D LORAGOTCHI_EXPERIMENTAL=1' in config[s].get('build_flags', [])}
