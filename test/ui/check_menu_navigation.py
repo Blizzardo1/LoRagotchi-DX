@@ -30,6 +30,8 @@ static LoRaFishGuestReturn loragotchiDXGuestReturn;
 #include "examples/companion_radio/ui-new/PetResetConfirmation.h"
 #include "examples/companion_radio/ui-new/LoRaFishText.h"
 #include "src/helpers/ui/DisplayDriver.h"
+#include "examples/companion_radio/LoRagotchiChannelStatus.h"
+LoRagotchiChannel::Result LoRagotchiChannel::startupResult = LoRagotchiChannel::Result::AlreadyJoined;
 using std::min; using std::max;
 #define LORAFISH_UI 1
 #define MESH_DEBUG_PRINTLN(...) ((void)0)
@@ -139,12 +141,12 @@ static void loRaFishRegisterDisplayActivity(DisplayDriver&){}
 static uint32_t loRaFishScreenTimeoutMs(){return 15000;}
 class UITask;
 '''
-names='loRaFishDXCommitLastSent loRaFishDXCommitRetries loRaFishNameNotice loRaFishDXDestinationKey loRaFishDXDestinationKnown LORAFISH_DX_CONTACT_PAGE loRaFishDXRequestStarted loRaFishPage loRaFishOption loRaFishValuePicker loRaFishDisplayOption loRaFishTimeField loRaFishTimeoutField loRaFishSoundField LORAFISH_PAGE_COUNT LORAFISH_RESET_CONFIRM_PAGE loRaFishResetConfirmation LORAFISH_ADVERT_PAGE loRaFishAdvertMenu loRaFishTheme loRaFishColor loRaFishScaleColor loRaFishEyeColor loRaFishColorField loRaFishNeedsAppearanceSetup loRaFishColorDisplay loRaFishSimulationMode loRaFishGuessNumber loRaFishGuessPrevious loRaFishGuessRounds loRaFishGuessScore loRaFishGuessHigher loRaFishGuessResultShown loRaFishGuessCorrect loRaFishGuessComplete loRaFishTimeoutAwakeSetting loRaFishTimeoutAsleepSetting loRaFishTimeoutShortNames loRaFishBrightnessSetting loRaFishBrightnessNames loRaFishBrightnessNeedsApply loRaFishAlwaysOnDimSetting loRaFishAlwaysOnDimNames loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound loRaFishMessageSound loRaFishVolumeNames loRaFishWakeSoundNames loRaFishSleepSoundNames loRaFishMessageSoundNames loRaFishWakeMelodies loRaFishSleepMelodies loRaFishMessageMelodies loRaFishSleepHour loRaFishWakeHour loRaFishUtcOffsetQuarters loRaFishColorNames'.split()
+names='loRaFishDXCommitLastSent loRaFishDXCommitRetries loRaFishChannelNotice loRaFishNameNotice loRaFishDXDestinationKey loRaFishDXDestinationKnown LORAFISH_DX_CONTACT_PAGE loRaFishDXRequestStarted loRaFishPage loRaFishOption loRaFishValuePicker loRaFishDisplayOption loRaFishTimeField loRaFishTimeoutField loRaFishSoundField LORAFISH_PAGE_COUNT LORAFISH_RESET_CONFIRM_PAGE loRaFishResetConfirmation LORAFISH_ADVERT_PAGE loRaFishAdvertMenu loRaFishTheme loRaFishColor loRaFishScaleColor loRaFishEyeColor loRaFishColorField loRaFishNeedsAppearanceSetup loRaFishColorDisplay loRaFishSimulationMode loRaFishGuessNumber loRaFishGuessPrevious loRaFishGuessRounds loRaFishGuessScore loRaFishGuessHigher loRaFishGuessResultShown loRaFishGuessCorrect loRaFishGuessComplete loRaFishTimeoutAwakeSetting loRaFishTimeoutAsleepSetting loRaFishTimeoutShortNames loRaFishBrightnessSetting loRaFishBrightnessNames loRaFishBrightnessNeedsApply loRaFishAlwaysOnDimSetting loRaFishAlwaysOnDimNames loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound loRaFishMessageSound loRaFishVolumeNames loRaFishWakeSoundNames loRaFishSleepSoundNames loRaFishMessageSoundNames loRaFishWakeMelodies loRaFishSleepMelodies loRaFishMessageMelodies loRaFishSleepHour loRaFishWakeHour loRaFishUtcOffsetQuarters loRaFishColorNames'.split()
 parts=[pre]+[declaration(name) for name in names]
 parts += [block('struct LoRaFishThemePalette')+';',declaration('loRaFishThemes'),
  'static constexpr uint8_t LORAFISH_COLOR_THEME_COUNT=4,LORAFISH_COLOR_ALLELE_COUNT=7;',
  source[source.index('static constexpr bool loRaFishHasSound'):source.index('#endif',source.index('static constexpr bool loRaFishHasSound'))+len('#endif')]]
-for name in ['static void beginLoRaFishNameNotice(', 'static const char* loRaFishDisplayName(', 'static const char* loRaFishProtocolName(', 'static uint8_t loRaFishThemeCount(', 'static uint8_t loRaFishDisplayOptionCount(',
+for name in ['static void beginLoRaFishChannelNotice(', 'static bool dismissLoRaFishNotice(', 'static void drawLoRaFishChannelNotice(', 'static void beginLoRaFishNameNotice(', 'static const char* loRaFishDisplayName(', 'static const char* loRaFishProtocolName(', 'static uint8_t loRaFishThemeCount(', 'static uint8_t loRaFishDisplayOptionCount(',
  'static uint8_t loRaFishOptionCount(', 'static void returnToLoRaFishOptions(',
  'static void cancelLoRaFishValue(', 'static void openLoRaFishValue(', 'static void selectLoRaFishValue(',
  'static void loRaFishFormatUtcOffset(', 'static void drawLoRaFishHeader(',

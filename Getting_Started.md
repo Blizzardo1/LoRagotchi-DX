@@ -8,6 +8,24 @@ For supported boards and PlatformIO build commands, see the [README](README.md#s
 
 ## First Use
 
+At startup, LoRagotchi automatically joins **`#loragotchi-dx`** using the standard
+MeshCore hashtag key. Saved channels load first. If already joined (including an
+alias with the same key), no slot or flash write is added. Otherwise the first
+empty slot is used and saved. Existing names, keys, Public and RF settings stay
+unchanged; the firmware does not send a join message.
+
+Hashtag keys are case-sensitive: use the exact lowercase spelling above on other
+radios. If all slots are occupied, the firmware leaves every channel untouched
+and displays a **No free channel slot** warning for `#loragotchi-dx`.
+It never clears a slot automatically. On DX, dismiss the startup warning with a click;
+this does not change any channels. If you choose to free a slot in your MeshCore
+management app, restart afterward to retry joining. A channel already named
+exactly `#loragotchi-dx` but using a different key
+is preserved instead of overwritten; export it before correcting or removing it
+in the app, then restart. Removing the automatic channel makes it return at the
+next startup if space is available. A failed storage write may require another
+startup to persist it. Ordinary channel chat is separate from fish transfers.
+
 0. Bringing a device already flashed with a MeshCore firmware is perfectly fine ☑️, though we do recommend making a backup first. don't erase when flashing to keep your settings, channels & ID
 1. Flash the LoRaGotchi DX build for your board. The NRF52 builds produce a UF2 file; see its README instructions. Other target build commands are listed there.
 2. Start the device and connect to it from the MeshCore app as a BLE companion. Use the PIN shown on the device's pairing screen when the app requests one.
