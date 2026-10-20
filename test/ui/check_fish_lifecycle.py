@@ -96,6 +96,8 @@ struct {
   bool present=false, colorCapable=true;
   uint8_t stage=2, scalesColor=3, color=4, eyesColor=5;
 } loragotchiDXGuest;
+#include "examples/companion_radio/LoRaFishGuestReturn.h"
+static LoRaFishGuestReturn loragotchiDXGuestReturn;
 ''']
 
 parts += [block('struct ' + name + ' {') + ';' for name in
@@ -114,7 +116,7 @@ loRaFishUtcOffsetQuarters loRaFishTimeoutAsleepSetting loRaFishBrightnessSetting
 loRaFishAlwaysOnDimSetting loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound
 loRaFishMessageSound lastWrittenLoRaFish haveLastWrittenLoRaFish
 loRaFishHappiness lastWrittenLoRaFishHappiness haveLastWrittenLoRaFishHappiness
-loRaFishHappyLastMs loRaFishHappyLastSavedMs LORAFISH_HAPPY_SETTINGS_MAGIC
+loRaFishHappyLastMs loRaFishHappyLastSavedMs LORAFISH_HAPPY_SETTINGS_MAGIC LORAFISH_AQUARIUM_SETTINGS_MAGIC
 LORAFISH_SETTINGS_SIZE LORAFISH_CHECKPOINT_MS LORAFISH_SAVE_RETRY_MS
 lastWrittenLoRaFishSettings haveLastWrittenLoRaFishSettings
 loRaFishSettingsSaveFailed loRaFishSaveFailed loRaFishSettingsLastAttempt loRaFishLastAttempt'''.split()

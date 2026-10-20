@@ -4,27 +4,28 @@
 
 // Stable identities keep return targets correct when optional rows appear/disappear.
 enum class LoRaFishOption : uint8_t {
-  Advert, Guess, Breed, Reset, Display, Sound, Schedule, RF, GNSS, Count
+  Advert, Guess, Breed, Reset, Display, Sound, Schedule, RF, GNSS, ReturnGuest, Count
 };
 
 class LoRaFishOptions {
 public:
-  static bool available(LoRaFishOption option, bool sound, bool breed) {
+  static bool available(LoRaFishOption option, bool sound, bool breed, bool guest=false) {
     return option < LoRaFishOption::Count &&
         (option != LoRaFishOption::Sound || sound) &&
-        (option != LoRaFishOption::Breed || breed);
+        (option != LoRaFishOption::Breed || breed) &&
+        (option != LoRaFishOption::ReturnGuest || guest);
   }
-  static uint8_t count(bool sound, bool breed) { return 7 + sound + breed; }
-  static LoRaFishOption at(uint8_t row, bool sound, bool breed) {
+  static uint8_t count(bool sound, bool breed, bool guest=false) { return 7 + sound + breed + guest; }
+  static LoRaFishOption at(uint8_t row, bool sound, bool breed, bool guest=false) {
     for (uint8_t i = 0; i < static_cast<uint8_t>(LoRaFishOption::Count); ++i) {
       const auto option = static_cast<LoRaFishOption>(i);
-      if (available(option, sound, breed) && row-- == 0) return option;
+      if (available(option, sound, breed, guest) && row-- == 0) return option;
     }
     return LoRaFishOption::Advert;
   }
-  static uint8_t index(LoRaFishOption option, bool sound, bool breed) {
-    for (uint8_t row = 0; row < count(sound, breed); ++row) {
-      if (at(row, sound, breed) == option) return row;
+  static uint8_t index(LoRaFishOption option, bool sound, bool breed, bool guest=false) {
+    for (uint8_t row = 0; row < count(sound, breed, guest); ++row) {
+      if (at(row, sound, breed, guest) == option) return row;
     }
     return 0;
   }

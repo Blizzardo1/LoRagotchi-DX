@@ -6,7 +6,42 @@ It's actually built straight on the stock meshcore (1.17.1 at the time of writin
 
 For supported boards and PlatformIO build commands, see the [README](README.md#supported-loragotchi-targets-in-this-tree). This guide describes the LoRaFish companion UI and behavior.
 
+## BLE pairing PIN
+
+With the default build settings and no saved PIN, LoRagotchi selects a random
+six-digit PIN once per boot from the same radio-noise RNG used for device
+identities. Use the active PIN shown on the device, not the old shared `123456`.
+The automatic PIN is not written to saved preferences. A display initialization
+failure does not switch back to a shared PIN; restore the display before pairing.
+
+An existing **nonzero saved PIN always wins**, including a deliberately saved
+`123456`. Otherwise, a non-default `BLE_PIN_CODE` build setting is honored.
+The inherited build value `123456` means automatic selection, not a fixed PIN.
+To return to automatic mode, clear the saved PIN to `0` using your MeshCore
+management tool, keep the default build setting, and restart. Choosing a fixed
+PIN is optional. Existing BLE bonds are not deleted or reset by this change;
+a bonded phone may reconnect without asking for a PIN again. USB-only builds
+are unchanged.
+
 ## First Use
+
+At startup, LoRagotchi automatically joins **`#loragotchi-dx`** using the standard
+MeshCore hashtag key. Saved channels load first. If already joined (including an
+alias with the same key), no slot or flash write is added. Otherwise the first
+empty slot is used and saved. Existing names, keys, Public and RF settings stay
+unchanged; the firmware does not send a join message.
+
+Hashtag keys are case-sensitive: use the exact lowercase spelling above on other
+radios. If all slots are occupied, the firmware leaves every channel untouched
+and displays a **No free channel slot** warning for `#loragotchi-dx`.
+It never clears a slot automatically. On DX, dismiss the startup warning with a click;
+this does not change any channels. If you choose to free a slot in your MeshCore
+management app, restart afterward to retry joining. A channel already named
+exactly `#loragotchi-dx` but using a different key
+is preserved instead of overwritten; export it before correcting or removing it
+in the app, then restart. Removing the automatic channel makes it return at the
+next startup if space is available. A failed storage write may require another
+startup to persist it. Ordinary channel chat is separate from fish transfers.
 
 0. Bringing a device already flashed with a MeshCore firmware is perfectly fine ☑️, though we do recommend making a backup first. don't erase when flashing to keep your settings, channels & ID
 1. Flash the LoRaGotchi DX build for your board. The NRF52 builds produce a UF2 file; see its README instructions. Other target build commands are listed there.
@@ -40,7 +75,8 @@ ordinary delayed age updates are saved together. LoRagotchi-controlled shutdown 
 restart flushes pending pet data. Abrupt power loss or a shared MeshCore reboot path
 can roll passive counters and timing back by up to the checkpoint interval; flash
 failures can extend that window. This is not a transactional or power-loss-safe save
-format. Existing pet and settings formats are unchanged.
+format. Pet records and the original settings prefix are preserved; an optional
+settings extension now stores the community-aquarium reward cooldown.
 
 ## Button Controls
 
@@ -96,6 +132,14 @@ The main **Options** menu is ordered as follows:
 **Breed with visitor** appears between Guess Game and Reset Pet when the local and
 visiting fish are eligible and there is no pending offspring egg. Optional rows do
 not change where Back returns from the other menus.
+
+**Send visitor home** appears after GNSS Monitor while a visitor is present.
+Hold to queue its return; opening or browsing Options sends nothing. The DX Visit
+overview shows **RETURNING VISITOR**, **RETURN DELIVERED**, or **RETURN UNCONFIRMED**.
+An unconfirmed visitor stays available for another explicit return attempt, but
+cannot be bred while its return is pending or unconfirmed. Delivery means a
+MeshCore radio acknowledgement, not an application-level confirmation of saved
+home state. A deleted owner contact must be restored before retrying.
 
 ### Editing settings
 
@@ -292,6 +336,31 @@ On the **DX Visit** overview, long-press to open the contact picker. Opening it 
 When your fish is away, open the DX picker and long-press again to recall it home. Double-click in the picker returns to the overview without sending or recalling. From the overview, short-click continues to Options and double-click returns to the aquarium, like Back from the other main screens. A sleeping fish cannot begin a new visit. If a visit is interrupted or the device reboots, DX travel state is cleared and the local fish is restored at home.
 
 Color-capable displays render visitor Scales, Body/Border, and Eyes traits independently. Mono traits use the display's foreground color; monochrome displays render every trait in their foreground color. A fish returning from a monochrome host briefly animates back into its saved home colors on a color display.
+
+### Community aquariums
+
+A compatible community receiver can capture a display copy and return the original
+fish automatically after a short stay. No Recall button press is needed. The
+aquarium can continue showing its copy after the pet comes home; the original
+device remains responsible for pet care and progress.
+
+A completed visit with an explicit community-aquarium return marker earns **+5
+Happy**, capped at 100, at most once per **six powered-on hours per device**.
+Normal tank returns do not award this bonus. Duplicates cannot repeat it, and a
+visit during cooldown is not queued for a future reward. A visit at 100 Happy
+still starts the cooldown. Eggs, memorial fish and unfinished appearance setup
+do not earn it.
+
+The cooldown counts time while awake, asleep or with the screen off, but not while
+powered off. It is saved immediately on an award, checkpointed with existing care
+timers, and retained across pet reset and generation changes. A healthy saved
+checkpoint can add up to five minutes of waiting after abrupt power loss. Storage
+failure is still subject to the existing non-transactional save limitations.
+Old settings start without an aquarium cooldown; downgrading to older firmware
+can discard this new setting when it next saves.
+
+Receiver implementers: see [COMMUNITY-RETURNS.md](COMMUNITY-RETURNS.md) for the
+backwards-compatible wire marker, identity rules, retry and snapshot behavior.
 
 ## Display and Hardware Notes
 
