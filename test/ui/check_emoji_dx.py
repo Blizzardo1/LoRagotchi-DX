@@ -64,19 +64,17 @@ int main(){
 
   the_mesh.custom={contact("Unrelated 🐟",1,19),dest};
   loragotchiDXHome.away=false;loragotchiDXHome.committing=true;
-  loRaFishDXCommitLastSent=tick-3000;loRaFishDXCommitRetries=0;serviceLoRaFishDXCommit();
-  assert(the_mesh.dxSends==4 && the_mesh.lastDestination==5);
-  assert(the_mesh.lastMessage.find("LFG1|COMMIT|")==0);
-  the_mesh.custom={contact("Unrelated 🐟",1,19)};tick+=3000;serviceLoRaFishDXCommit();
-  assert(the_mesh.dxSends==4);
-  pass("commit retry also keeps the selected public key and refuses an unrelated replacement slot");
+  ContactInfo resolved;assert(loRaFishDXDestination(resolved) && resolved.index==5);
+  the_mesh.custom={contact("Unrelated 🐟",1,19)};
+  assert(!loRaFishDXDestination(resolved) && the_mesh.dxSends==3);
+  pass("active destination resolver keeps full identity after reorder; retry service is covered by check_busy_mesh");
 
   loragotchiDXHome.away=loragotchiDXHome.pending=loragotchiDXHome.committing=false;
   loRaFishDXDestinationKnown=false;the_mesh.custom={contact("No marker",1,0),contact("Fish RPT 🐟",2,1)};
   loRaFishDXContactIndex=999;
   ContactInfo c;assert(!loRaFishDXGetContact(c));shortPress(KEY_NEXT);
   task._alert_expiry=0;task.handleLongPress(KEY_ENTER);
-  assert(the_mesh.dxSends==4 && task.alert=="No fish tanks");
+  assert(the_mesh.dxSends==3 && task.alert=="No fish tanks");
   task.display.clearBounds();drawLoRaFishDX(task.display);
   the_mesh.custom.push_back(contact("New fish 🐠",1,2));
   assert(loRaFishDXGetContact(c) && loRaFishDXContactIndex==2);

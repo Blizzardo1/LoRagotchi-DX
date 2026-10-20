@@ -30,6 +30,7 @@ pre = r'''
 #include <string>
 #include <vector>
 #include "examples/companion_radio/LoRaFishGuestReturn.h"
+#include "examples/companion_radio/LoRaFishVisit.h"
 static std::map<std::string,std::vector<uint8_t>> records;
 struct Preferences {
   bool begin(const char*,bool){return true;}

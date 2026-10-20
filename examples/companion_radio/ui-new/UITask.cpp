@@ -2148,43 +2148,6 @@ static bool loRaFishDXDestination(ContactInfo& c) {
   return the_mesh.getContactByIdx((uint32_t)MAX_ANON_CONTACTS + loragotchiDXHome.destinationIndex, c);
 }
 
-static uint32_t loRaFishDXRequestStarted=0;
-static uint32_t loRaFishDXCommitLastSent=0;
-static uint8_t loRaFishDXCommitRetries=0;
-
-static void serviceLoRaFishDXCommit() {
-  if(!loragotchiDXHome.committing) {
-    loRaFishDXCommitLastSent=0;
-    loRaFishDXCommitRetries=0;
-    return;
-  }
-  const uint32_t now=millis();
-  // ACK handler sent the first COMMIT. Retry after 3 seconds, up to 4 times.
-  if(loRaFishDXCommitLastSent==0) {
-    loRaFishDXCommitLastSent=now;
-    return;
-  }
-  if(now-loRaFishDXCommitLastSent < 3000UL) return;
-  if(loRaFishDXCommitRetries >= 4) {
-    Serial.println("[LFG1 PEER] ARRIVED timeout; fish kept HOME");
-    loragotchiDXHome.committing=false;
-    loragotchiDXHome.pending=false;
-    loragotchiDXHome.away=false;
-    loragotchiDXSave();
-    loRaFishDXCommitLastSent=0;
-    loRaFishDXCommitRetries=0;
-    return;
-  }
-  ContactInfo dest;
-  if(!loRaFishDXDestination(dest)) return;
-  // Repeat the complete original appearance, even if that first packet was lost.
-  int r=the_mesh.sendLoRaFishCommit(dest);
-  loRaFishDXCommitLastSent=now;
-  loRaFishDXCommitRetries++;
-  Serial.printf("[LFG1 PEER] COMMIT RETRY %u TX result=%d\n",(unsigned)loRaFishDXCommitRetries,r);
-}
-
-
 static bool loRaFishDXEligible(const ContactInfo& c) {
   return c.type == ADV_TYPE_CHAT && LoRaFishText::hasFish(c.name, sizeof(c.name));
 }
@@ -2252,25 +2215,21 @@ static void drawLoRaFishDX(DisplayDriver& display) {
     display.drawTextCentered(w/2,16,returnStatus);
 
   if(loragotchiDXHome.away) {
-    display.drawTextCentered(w/2,27,"FISH AWAY");
+    display.drawTextCentered(w/2,27,loragotchiDXVisit.phase == LoRaFishVisit::Unconfirmed ?
+        "RETURN UNCONFIRMED" : loragotchiDXVisit.phase == LoRaFishVisit::Recall ? "RECALLING..." : "FISH AWAY");
     display.setColor(UIColor::secondary_txt);
     drawLoRaFishName(display,39,loragotchiDXHome.destinationName,sizeof(loragotchiDXHome.destinationName));
   } else if(loragotchiDXHome.committing) {
-    display.drawTextCentered(w/2,28,"DELIVERING...");
+    display.drawTextCentered(w/2,28,loragotchiDXVisit.phase == LoRaFishVisit::Unconfirmed ?
+        "UNCONFIRMED" : loragotchiDXVisit.phase == LoRaFishVisit::Recall ? "RECALLING..." : "DELIVERING...");
     display.setColor(UIColor::secondary_txt);
     drawLoRaFishName(display,40,loragotchiDXHome.destinationName,sizeof(loragotchiDXHome.destinationName));
   } else if(loragotchiDXHome.pending) {
-    if(loRaFishDXRequestStarted && millis()-loRaFishDXRequestStarted > 20000UL) {
-      loragotchiDXHome.pending=false;
-      loragotchiDXHome.away=false;
-      loragotchiDXSave();
-      loRaFishDXRequestStarted=0;
-    }
-    display.drawTextCentered(w/2,28,loragotchiDXHome.pending?"CALLING...":"NO REPLY - RETRY");
+    display.drawTextCentered(w/2,28,"CALLING...");
     display.setColor(UIColor::secondary_txt);
     drawLoRaFishName(display,40,loragotchiDXHome.destinationName,sizeof(loragotchiDXHome.destinationName));
   } else if (!choosingContact) {
-    display.drawTextCentered(w/2,27,returnStatus);
+    display.drawTextCentered(w/2,27,loragotchiDXVisit.phase == LoRaFishVisit::NoReply ? "NO REPLY - RETRY" : returnStatus);
     display.setColor(UIColor::secondary_txt);
     display.drawTextCentered(w/2,39,"Hold to choose");
   } else {
@@ -2620,7 +2579,7 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
   const int homeTargetX=localSleeping ? (loragotchiDXGuest.present ? w/3 : w/2-5) : x;
   const int homeTargetY=localSleeping ? 38 : y;
   loRaFishBeginTravelAnimation(loRaFishHomeTravelAnimation,w,homeTargetX,homeTargetY);
-  if (!loragotchiDXHome.away) {
+  if (!loragotchiDXHome.away && !loragotchiDXHome.committing) {
     // A guest must not freeze the host fish.  The home fish keeps its normal
     // swim path; if it is bedtime, only the home fish sleeps.
     bool homeTraveling=false;
@@ -2642,7 +2601,8 @@ static void drawLoRaFishAquarium(DisplayDriver& display, UITask* task) {
         loRaFishDrawTravelAnimation(display,loRaFishHomeTravelAnimation);
     if (!homeLeaving && !loRaFishGuestTravelAnimation.active && !loragotchiDXGuest.present) {
       display.setColor(UIColor::secondary_txt);
-      display.drawTextCentered(w/2,35,"FISH DX AWAY");
+      display.drawTextCentered(w/2,35,loragotchiDXHome.committing ?
+          (loragotchiDXVisit.phase == LoRaFishVisit::Unconfirmed ? "VISIT UNCONFIRMED" : "DELIVERING...") : "FISH DX AWAY");
     }
   }
 
@@ -4030,7 +3990,6 @@ void UITask::loop() {
     }
   }
 #endif
-  serviceLoRaFishDXCommit();
   loRaFishObserveTravelTransitions();
   if (loragotchiDXHome.returned) {
     if (!loRaFishReturnNavigationHandled) {
@@ -4500,11 +4459,7 @@ char UITask::handleLongPress(char c) {
         showAlert("Tank not in contacts", 900);
         return 0;
       }
-      char msg[80]; snprintf(msg,sizeof(msg),"LFG1|RECALL|%lu|%lu",
-        (unsigned long)loragotchiDXHome.txid,(unsigned long)loragotchiDXHome.fishid);
-      int r=the_mesh.sendMessage(c,the_mesh.getRTCClock()->getCurrentTime(),0,msg,ack,to);
-      Serial.printf("[LFG1 M2] RECALL TX result=%d\n",r);
-      showAlert("Recalling fish",700);
+      showAlert(the_mesh.recallLoRaFish() ? "Recall queued" : "No active visit",700);
     } else if(!loragotchiDXHome.pending && !loragotchiDXHome.committing) {
       if (!loRaFishDXGetContact(c)) { showAlert("No fish tanks", 900); return 0; }
       // Sleeping fish stay home.  Recall remains available above so an
@@ -4537,7 +4492,7 @@ char UITask::handleLongPress(char c) {
         loragotchiDXHome.destinationKnown=true;
         memcpy(loRaFishDXDestinationKey, c.id.pub_key, PUB_KEY_SIZE);
         loRaFishDXDestinationKnown = true;
-        loRaFishDXRequestStarted=millis();
+        the_mesh.trackLoRaFishRequest(msg,to);
         loragotchiDXSave();
       }
       Serial.printf("[LFG1 M2] REQ TX result=%d to='%s'\n",r,c.name);

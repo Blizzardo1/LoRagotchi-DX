@@ -17,27 +17,21 @@ aquarium=Path(sys.argv[2] if len(sys.argv)>2 else root.parent/'loragotchi-commun
 if not (rx/'examples/companion_radio/LoRagotchiRX.h').exists():raise SystemExit('Production RX checkout required')
 if not (aquarium/'tank/protocol.py').exists():raise SystemExit('Aquarium checkout required')
 block=fixture['block'];ui=fixture['ui_source']
-methods='\n'.join(block(name) for name in ['int MyMesh::sendLoRaFishCommit(', 'bool MyMesh::returnLoRaFishGuest()', 'bool MyMesh::acknowledgeLoRaFishGuestReturn(', 'void MyMesh::serviceLoRaFishGuestReturn()'])
+methods=fixture['methods']
 source=fixture['pre']+fixture['structs']+fixture['globals']+fixture['receive']+methods+r'''
 #include <fstream>
 #include "RX-under-test.h"
 MyMesh the_mesh;
-static uint32_t loRaFishDXCommitLastSent=0;
-static uint8_t loRaFishDXCommitRetries=0;
-bool loRaFishDXDestination(ContactInfo& dest) {
- auto* c=the_mesh.lookupContactByPubKey(loragotchiDXHome.destinationKey,32);
- if(!c)return false;dest=*c;return true;
-}
 struct IO:lrx::IO {
  std::vector<std::string> sent;unsigned writes=0;
  bool save(const lrx::Journal&){++writes;return true;}
  bool send(const uint8_t*,const char* text,uint32_t& ack,uint32_t& timeout){sent.emplace_back(text);ack=1;timeout=10000;return true;}
 };
-'''+block('static void serviceLoRaFishDXCommit()',ui)+r'''
+'''+r'''
 int main(int argc,char** argv) {
  ContactInfo dest,impostor;dest.id.pub_key[0]=9;impostor=dest;impostor.id.pub_key[31]=1;
  the_mesh.contacts={dest};uint8_t owner[32]={1};
- // First colour packet is lost. All four retries must carry the exact original
+ // First colour packet is lost. All three retries must carry the exact original
  // genes even if local display preferences change after the initial send.
  now=100;loragotchiDXHome.pending=true;loragotchiDXHome.destinationKnown=true;
  memcpy(loragotchiDXHome.destinationKey,dest.id.pub_key,32);
@@ -48,22 +42,24 @@ int main(int argc,char** argv) {
  const std::string first=the_mesh.sent.back();assert(first=="LFG1|COMMIT|7|8|C|5|4|2|65535");
  assert(loragotchiDXHome.committing && !loragotchiDXHome.pending);
  IO io;lrx::Receiver r(io);r.begin(nullptr,0);r.receive(owner,"LFG1|REQ|7|8|2|Colour Fish",0);
- serviceLoRaFishDXCommit();now=3099;serviceLoRaFishDXCommit();assert(the_mesh.sent.size()==1);
+ the_mesh.serviceLoRaFishVisit();now=loragotchiDXVisit.due-1;the_mesh.serviceLoRaFishVisit();assert(the_mesh.sent.size()==1);
  loragotchiDXLocalColorIndex=loragotchiDXLocalScalesColorIndex=loragotchiDXLocalEyesColorIndex=0;
  loragotchiDXLocalHasColorGenes=false;
- for(int i=1;i<=4;++i){
-  now=100+3000*i;serviceLoRaFishDXCommit();assert(the_mesh.sent.size()==size_t(i+1));
+ for(int i=1;i<=3;++i){
+  now=loragotchiDXVisit.due;the_mesh.serviceLoRaFishVisit();assert(the_mesh.sent.size()==size_t(i+1));
   assert(the_mesh.sent.back()==first);r.receive(owner,the_mesh.sent.back().c_str(),now);
+  if(i==1) {
+    r.tick(now+3999);assert(io.sent.back().find("ARRIVED")!=std::string::npos);
+    r.tick(now+4000);assert(io.sent.back()=="LFG1|RETURN|7|8|C|AQUARIUM1");
+  }
  }
  assert(r.data.slots[0].body==5 && r.data.slots[0].scales==4 && r.data.slots[0].eyes==2 && r.data.slots[0].appearance);
  assert(r.data.nextId==2); // retries don't create more snapshots or mutate one
  uint8_t data[80];auto len=r.event(r.data.slots[0].id,data);assert(len==77);
  std::ofstream(argv[1],std::ios::binary).write((char*)data,len);
- puts("PASS first packet lost: all four production retries preserve original purple/turquoise/yellow genes");
- now+=3000;serviceLoRaFishDXCommit();assert(the_mesh.sent.size()==5 && !loragotchiDXHome.committing);
- r.tick(7099);assert(io.sent.back().find("ARRIVED")!=std::string::npos);
- r.tick(7100);assert(io.sent.back()=="LFG1|RETURN|7|8|C|AQUARIUM1");
- puts("PASS unchanged retry budget and four-second RX hold; duplicates keep one immutable snapshot");
+ puts("PASS first packet lost: all three production retries preserve original purple/turquoise/yellow genes");
+ now=loragotchiDXVisit.deadline;the_mesh.serviceLoRaFishVisit();assert(the_mesh.sent.size()==4 && loragotchiDXHome.committing && loragotchiDXVisit.phase==LoRaFishVisit::Unconfirmed);
+ puts("PASS bounded retry budget and four-second RX hold; duplicates keep one immutable snapshot");
 
  loragotchiDXHome.committing=true;auto sends=the_mesh.sent.size();
  assert(the_mesh.sendLoRaFishCommit(impostor)==MSG_SEND_FAILED);
@@ -74,12 +70,13 @@ int main(int argc,char** argv) {
  puts("PASS cached payload requires active visit, exact transaction/fish and full destination key");
 
  // Monochrome tint must not be guessed or silently upgraded to a colour fish.
+ loragotchiDXHome.committing=false;loragotchiDXVisit.stop();
  loragotchiDXHome.pending=true;loragotchiDXHome.txid=9;loragotchiDXHome.fishid=10;
  loragotchiDXLocalHasColorGenes=false;loragotchiDXLocalColorIndex=6;
  loragotchiDXLocalScalesColorIndex=6;loragotchiDXLocalEyesColorIndex=6;
  the_mesh.receive(dest,"LFG1|ACK|9|10");
  assert(the_mesh.sent.back()=="LFG1|COMMIT|9|10|M|6|6|6|65535");
- r.receive(owner,"LFG1|REQ|9|10|2|Mono Fish",20000);r.receive(owner,the_mesh.sent.back().c_str(),20001);
+ r.receive(owner,"LFG1|REQ|9|10|2|Mono Fish",now);r.receive(owner,the_mesh.sent.back().c_str(),now+1);
  assert(r.data.slots[1].mode=='M' && r.data.slots[1].body==6 && r.data.slots[1].tint==65535);
  puts("PASS next visit replaces cache; genuine monochrome appearance remains monochrome");
 

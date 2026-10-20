@@ -21,6 +21,8 @@ static LoRaFishCommitFrame loRaFishCommitFrame;
 LoRaGotchiDXHomeState loragotchiDXHome;
 LoRaGotchiDXGuestState loragotchiDXGuest;
 LoRaFishGuestReturn loragotchiDXGuestReturn;
+LoRaFishVisit loragotchiDXVisit;
+LoRaFishReservation loragotchiDXReservation;
 bool loragotchiDXLocalColorCapable = false;
 bool loragotchiDXLocalHasColorGenes = false;
 uint8_t loragotchiDXLocalColorIndex = 0;
@@ -49,6 +51,8 @@ static void loragotchiDXResetTravelStateForMigration() {
   // Old reservations/visitors cannot be trusted across a schema migration.
   loragotchiDXGuest = LoRaGotchiDXGuestState{};
   loragotchiDXGuestReturn = LoRaFishGuestReturn{};
+  loragotchiDXVisit = LoRaFishVisit{};
+  loragotchiDXReservation = LoRaFishReservation{};
 }
 
 void loragotchiDXSave() {
@@ -89,6 +93,8 @@ void loragotchiDXLoad() {
   loragotchiDXHome.fishid = savedFishId;
   loragotchiDXGuest = LoRaGotchiDXGuestState{};
   loragotchiDXGuestReturn = LoRaFishGuestReturn{};
+  loragotchiDXVisit = LoRaFishVisit{};
+  loragotchiDXReservation = LoRaFishReservation{};
   loragotchiDXReturnedFromMonochrome = false;
 
   Serial.println("[LFG1 PEER] BOOT: DX session cleared; local fish HOME; guest slot EMPTY");
@@ -557,6 +563,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
                           uint32_t sender_timestamp, const uint8_t *extra, int extra_len, const char *text) {
 #ifdef LORAFISH_UI
   if (text && strncmp(text,"LFG1|",5)==0) {
+    expireLoRaFishReservation();
     unsigned long tx=0,fid=0;
     Serial.printf("[LFG1 PEER] RX from='%s' text=%s\n",from.name,text);
 
@@ -569,9 +576,10 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
         const bool sameTx=(loragotchiDXGuest.txid==tx && loragotchiDXGuest.fishid==fid &&
             loragotchiDXGuest.ownerKnown && !memcmp(from.id.pub_key,loragotchiDXGuest.ownerKey,32));
         char reply[80];
-        if(sameTx && loragotchiDXGuestReturn.status!=LoRaFishGuestReturn::Idle) {
-          if (loragotchiDXGuestReturn.status != LoRaFishGuestReturn::Confirmed) return;
-          snprintf(reply,sizeof(reply),"LFG1|RETURN|%lu|%lu|%c",tx,fid,loragotchiDXLocalColorCapable?'C':'M');
+        if(sameTx && (loragotchiDXReservation.expired || loragotchiDXGuestReturn.status!=LoRaFishGuestReturn::Idle)) {
+          if (!loragotchiDXReservation.expired && loragotchiDXGuestReturn.status != LoRaFishGuestReturn::Confirmed) return;
+          snprintf(reply,sizeof(reply),"LFG1|RETURN|%lu|%lu|%c%s",tx,fid,loragotchiDXLocalColorCapable?'C':'M',
+              loragotchiDXReservation.expired ? "|CANCEL1" : "");
           uint32_t hash=0,timeout=0;sendMessage(from,getRTCClock()->getCurrentTime(),0,reply,hash,timeout);
           return;
         }
@@ -587,6 +595,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
             strncpy(loragotchiDXGuest.homeName,from.name,sizeof(loragotchiDXGuest.homeName)-1);
             loragotchiDXGuest.homeName[sizeof(loragotchiDXGuest.homeName)-1]=0;
             loragotchiDXGuest.reserved=true;
+            loragotchiDXReservation.start(millis());
             loragotchiDXSave();
           }
           snprintf(reply,sizeof(reply),"LFG1|ACK|%lu|%lu",tx,fid);
@@ -599,20 +608,16 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       }
     } else if (strncmp(text,"LFG1|ACK|",9)==0 && fromDestination &&
         sscanf(text+9,"%lu|%lu",&tx,&fid)==2 &&
-        loragotchiDXHome.pending && tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
+        loragotchiDXHome.pending && !loragotchiDXVisit.exhausted(millis()) &&
+        loragotchiDXVisit.phase!=LoRaFishVisit::Commit &&
+        tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
       loRaFishCommitFrame.prepare(from.id.pub_key, tx, fid,
         loragotchiDXLocalHasColorGenes, loragotchiDXLocalColorIndex,
         loragotchiDXLocalScalesColorIndex, loragotchiDXLocalEyesColorIndex,
         LORAFISH_MONO_PIXEL_TINT_RGB565);
+      // Duplicate acceptance cannot reset the retry budget or appearance.
+      loragotchiDXVisit.begin(LoRaFishVisit::Commit, millis());
       int r=sendLoRaFishCommit(from);
-      if(r>=0) {
-        // Do NOT mark the fish away until the destination confirms ARRIVED.
-        loragotchiDXHome.pending=false;
-        loragotchiDXHome.committing=true;
-        strncpy(loragotchiDXHome.destinationName,from.name,sizeof(loragotchiDXHome.destinationName)-1);
-        loragotchiDXHome.destinationName[sizeof(loragotchiDXHome.destinationName)-1]=0;
-        loragotchiDXSave();
-      }
       Serial.printf("[LFG1 PEER] COMMIT TX result=%d; waiting for ARRIVED\n",r);
     } else if (strncmp(text,"LFG1|ARRIVED|",13)==0 && fromDestination &&
                sscanf(text+13,"%lu|%lu",&tx,&fid)==2 &&
@@ -620,6 +625,8 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       loragotchiDXHome.pending=false;
       loragotchiDXHome.committing=false;
       loragotchiDXHome.away=true;
+      // A user recall already in flight must continue despite late ARRIVED.
+      if (loragotchiDXVisit.phase != LoRaFishVisit::Recall) loragotchiDXVisit.stop();
       loragotchiDXHome.returned=false;
       strncpy(loragotchiDXHome.destinationName,from.name,sizeof(loragotchiDXHome.destinationName)-1);
       loragotchiDXHome.destinationName[sizeof(loragotchiDXHome.destinationName)-1]=0;
@@ -627,15 +634,16 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       Serial.println("*** DX FISH CONFIRMED ARRIVED ***");
     } else if (strncmp(text,"LFG1|COMMIT|",12)==0 &&
            sscanf(text+12,"%lu|%lu",&tx,&fid)==2) {
-      if((loragotchiDXGuest.reserved || loragotchiDXGuest.present ||
+      if((loragotchiDXGuest.reserved || loragotchiDXGuest.present || loragotchiDXReservation.expired ||
           loragotchiDXGuestReturn.status != LoRaFishGuestReturn::Idle) &&
          tx==loragotchiDXGuest.txid && fid==loragotchiDXGuest.fishid &&
          loragotchiDXGuest.ownerKnown && !memcmp(loragotchiDXGuest.ownerKey,from.id.pub_key,32)) {
         // Keep the completed transaction as a tombstone until a new visit.
         // A late COMMIT must replay RETURN, never resurrect the guest.
-        if(loragotchiDXGuestReturn.status!=LoRaFishGuestReturn::Idle) {
-          if (loragotchiDXGuestReturn.status != LoRaFishGuestReturn::Confirmed) return;
-          char returned[80];snprintf(returned,sizeof(returned),"LFG1|RETURN|%lu|%lu|%c",tx,fid,loragotchiDXLocalColorCapable?'C':'M');
+        if(loragotchiDXReservation.expired || loragotchiDXGuestReturn.status!=LoRaFishGuestReturn::Idle) {
+          if (!loragotchiDXReservation.expired && loragotchiDXGuestReturn.status != LoRaFishGuestReturn::Confirmed) return;
+          char returned[80];snprintf(returned,sizeof(returned),"LFG1|RETURN|%lu|%lu|%c%s",tx,fid,loragotchiDXLocalColorCapable?'C':'M',
+              loragotchiDXReservation.expired ? "|CANCEL1" : "");
           uint32_t hash=0,timeout=0;sendMessage(from,getRTCClock()->getCurrentTime(),0,returned,hash,timeout);return;
         }
             char colorMode='M'; unsigned bodyColor=0,scalesColor=0,eyesColor=0,monoPixelTint=0xFFFF;
@@ -665,17 +673,22 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
         Serial.printf("[LFG1 PEER] ARRIVED TX result=%d\n",r);
       }
     } else if (strncmp(text,"LFG1|BUSY|",10)==0 && fromDestination && loragotchiDXHome.pending &&
+        loragotchiDXVisit.phase!=LoRaFishVisit::Commit &&
         sscanf(text+10,"%lu|%lu",&tx,&fid)==2 && tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
       loragotchiDXHome.pending=false; loragotchiDXHome.committing=false; loragotchiDXHome.away=false; loragotchiDXSave();
+      loragotchiDXVisit.stop();
       Serial.println("[LFG1 PEER] destination busy");
     } else if (strncmp(text,"LFG1|RECALL|",12)==0 &&
                sscanf(text+12,"%lu|%lu",&tx,&fid)==2) {
       if(tx==loragotchiDXGuest.txid && fid==loragotchiDXGuest.fishid &&
           loragotchiDXGuest.ownerKnown && !memcmp(loragotchiDXGuest.ownerKey,from.id.pub_key,32)) {
-        if(loragotchiDXGuest.present || loragotchiDXGuest.reserved) returnLoRaFishGuest();
+        if(loragotchiDXGuest.reserved) {
+          loragotchiDXReservation.due=millis();expireLoRaFishReservation();
+        }
+        if(loragotchiDXGuest.present) returnLoRaFishGuest();
         else {
-          char reply[80];snprintf(reply,sizeof(reply),"LFG1|RETURN|%lu|%lu|%c",tx,fid,
-              loragotchiDXLocalColorCapable?'C':'M');
+          char reply[80];snprintf(reply,sizeof(reply),"LFG1|RETURN|%lu|%lu|%c%s",tx,fid,
+              loragotchiDXLocalColorCapable?'C':'M',loragotchiDXReservation.expired ? "|CANCEL1" : "");
           uint32_t ack=0,to=0;sendMessage(from,getRTCClock()->getCurrentTime(),0,reply,ack,to);
         }
       }
@@ -685,8 +698,12 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
                tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
       char returnMode=0;
       const bool hasReturnMode=sscanf(text+12,"%lu|%lu|%c",&tx,&fid,&returnMode)==3;
-      loragotchiDXReturnedFromMonochrome=hasReturnMode && returnMode=='M';
-      loragotchiDXHome.completedVisit = loragotchiDXHome.committing || loragotchiDXHome.away;
+      char cancelled[80];
+      snprintf(cancelled,sizeof(cancelled),"LFG1|RETURN|%lu|%lu|%c|CANCEL1",tx,fid,returnMode);
+      const bool cancelledReservation=hasReturnMode && strcmp(text,cancelled)==0;
+      loragotchiDXReturnedFromMonochrome=!cancelledReservation && hasReturnMode && returnMode=='M';
+      loragotchiDXHome.completedVisit = !cancelledReservation &&
+          (loragotchiDXHome.committing || loragotchiDXHome.away);
       // Opt-in, backwards-compatible capability claim from the actual visit
       // destination, not inferred from its mutable display name or fish emoji.
       char communityReturn[80];
@@ -694,6 +711,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       loragotchiDXHome.communityVisit = loragotchiDXHome.completedVisit &&
           strcmp(text,communityReturn) == 0;
       loragotchiDXHome.pending=false; loragotchiDXHome.committing=false; loragotchiDXHome.away=false; loragotchiDXHome.returned=true; loragotchiDXSave();
+      loragotchiDXVisit.stop();
       Serial.println("*** DX FISH RETURNED HOME ***");
     }
     return;
@@ -2715,8 +2733,105 @@ int MyMesh::sendLoRaFishCommit(const ContactInfo& destination) {
   const char* payload = loRaFishCommitFrame.forVisit(destination.id.pub_key,
       loragotchiDXHome.txid, loragotchiDXHome.fishid);
   if (!payload) return MSG_SEND_FAILED;
+  if (!loRaFishQueueReady()) return MSG_SEND_FAILED;
   uint32_t ack = 0, timeout = 0;
-  return sendMessage(destination, getRTCClock()->getCurrentTime(), 0, payload, ack, timeout);
+  int result = sendMessage(destination, getRTCClock()->getCurrentTime(),
+      loragotchiDXVisit.attempts, payload, ack, timeout);
+  loragotchiDXVisit.sent(millis(), timeout, loRaFishRandom(), result >= 0);
+  if (result >= 0 && !loragotchiDXHome.committing) {
+    loragotchiDXHome.pending = false;
+    loragotchiDXHome.committing = true;
+    loragotchiDXSave();
+  }
+  return result;
+}
+
+bool MyMesh::loRaFishQueueReady() const {
+  // Conservative local backpressure: don't add retries behind any queued TX,
+  // or while a packet is on-air. Shared MeshCore queue/radio policy is untouched.
+  return _mgr->getOutboundTotal() == 0 && _radio->isInRecvMode() && !_radio->isReceiving();
+}
+
+uint32_t MyMesh::loRaFishRandom() {
+  uint32_t value;
+  getRNG()->random(reinterpret_cast<uint8_t*>(&value), sizeof(value));
+  return value;
+}
+
+void MyMesh::trackLoRaFishRequest(const char* request, uint32_t timeout) {
+  loragotchiDXVisit.begin(LoRaFishVisit::Request, millis());
+  strncpy(loragotchiDXVisit.request, request, sizeof(loragotchiDXVisit.request)-1);
+  loragotchiDXVisit.request[sizeof(loragotchiDXVisit.request)-1] = 0;
+  loragotchiDXVisit.sent(millis(), timeout, loRaFishRandom(), true);
+}
+
+bool MyMesh::recallLoRaFish() {
+  if ((!loragotchiDXHome.committing && !loragotchiDXHome.away) ||
+      !loragotchiDXHome.destinationKnown) return false;
+  if (loragotchiDXVisit.phase != LoRaFishVisit::Recall)
+    loragotchiDXVisit.begin(LoRaFishVisit::Recall, millis());
+  serviceLoRaFishVisit();
+  return true;
+}
+
+void MyMesh::expireLoRaFishReservation() {
+  if (loragotchiDXGuest.reserved && !loragotchiDXGuest.present &&
+      loragotchiDXGuestReturn.status == LoRaFishGuestReturn::Idle &&
+      LoRaFishTiming::reached(millis(), loragotchiDXReservation.due)) {
+    loragotchiDXGuest.reserved = false;
+    // Keep this peer/transaction as a cancellation tombstone until next intake.
+    loragotchiDXReservation.expired = true;
+    loragotchiDXSave();
+  }
+}
+
+void MyMesh::serviceLoRaFishVisit() {
+  expireLoRaFishReservation();
+  if (!loragotchiDXHome.pending && !loragotchiDXHome.committing && !loragotchiDXHome.away) {
+    if (loragotchiDXVisit.running()) loragotchiDXVisit.stop();
+    return;
+  }
+  const uint32_t now = millis();
+  if (!loragotchiDXVisit.running()) return;
+  const bool queueReady = loRaFishQueueReady();
+  if (!queueReady) {
+    if (loragotchiDXVisit.attempts) loragotchiDXVisit.queueBlocked = true;
+  } else if (loragotchiDXVisit.queueBlocked) {
+    // A queued/on-air copy must get a full response window after local TX
+    // drains. This is conservative, not an exact per-packet TX callback.
+    loragotchiDXVisit.due = now + loragotchiDXVisit.wait;
+    loragotchiDXVisit.queueBlocked = false;
+  }
+  if (loragotchiDXVisit.exhausted(now)) {
+    if (loragotchiDXHome.committing || loragotchiDXHome.away) {
+      // A queued COMMIT may have arrived. Preserve identity and accept late
+      // ARRIVED/RETURN; only explicit application confirmation ends the visit.
+      loragotchiDXVisit.phase = LoRaFishVisit::Unconfirmed;
+    } else {
+      loragotchiDXHome.pending = false;
+      loragotchiDXVisit.phase = LoRaFishVisit::NoReply;
+      loragotchiDXSave();
+    }
+    return;
+  }
+  if (!queueReady || !loragotchiDXVisit.ready(now)) return;
+  auto* destination = loragotchiDXHome.destinationKnown ?
+      lookupContactByPubKey(loragotchiDXHome.destinationKey, 32) : nullptr;
+  if (!destination) return; // no fallback to a reordered contact; deadline still runs
+  if (loragotchiDXVisit.phase == LoRaFishVisit::Commit) {
+    sendLoRaFishCommit(*destination);
+    return;
+  }
+  char recall[80];
+  snprintf(recall, sizeof(recall), "LFG1|RECALL|%lu|%lu",
+      (unsigned long)loragotchiDXHome.txid, (unsigned long)loragotchiDXHome.fishid);
+  const char* payload = loragotchiDXVisit.phase == LoRaFishVisit::Request ?
+      loragotchiDXVisit.request : recall;
+  if (!payload[0]) return;
+  uint32_t ack = 0, timeout = 0;
+  int result = sendMessage(*destination, getRTCClock()->getCurrentTime(),
+      loragotchiDXVisit.attempts, payload, ack, timeout);
+  loragotchiDXVisit.sent(now, timeout, loRaFishRandom(), result >= 0);
 }
 
 bool MyMesh::returnLoRaFishGuest() {
@@ -2742,6 +2857,7 @@ void MyMesh::serviceLoRaFishGuestReturn() {
 void MyMesh::loop() {
   BaseChatMesh::loop();
 #ifdef LORAFISH_UI
+  serviceLoRaFishVisit();
   serviceLoRaFishGuestReturn();
 #endif
 

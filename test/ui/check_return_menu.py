@@ -34,6 +34,18 @@ int main(){
      task.display.clearBounds();drawLoRaFishDX(task.display);
    }
  }
+ loragotchiDXHome.away=false;loragotchiDXHome.pending=false;loragotchiDXHome.committing=true;
+ loragotchiDXHome.destinationKey[0]=1;loragotchiDXHome.destinationKnown=true;
+ loRaFishDXDestinationKnown=false;loragotchiDXHome.destinationIndex=0;
+ for(auto phase:{LoRaFishVisit::Unconfirmed,LoRaFishVisit::Recall}) {
+   loragotchiDXVisit.phase=phase;loRaFishPage=4;
+   task.display.clearBounds();drawLoRaFishDX(task.display);
+   const std::string expected=phase==LoRaFishVisit::Unconfirmed?"UNCONFIRMED":"RECALLING...";
+   assert(std::find(task.display.printed.begin(),task.display.printed.end(),expected)!=task.display.printed.end());
+   const auto before=the_mesh.dxSends;task._alert_expiry=0;
+   task.handleLongPress(KEY_ENTER);assert(loRaFishPage==LORAFISH_DX_CONTACT_PAGE && the_mesh.dxSends==before);
+   task.handleLongPress(KEY_ENTER);assert(the_mesh.lastMessage.find("LFG1|RECALL|")==0);
+ }
  puts("PASS aquarium-to-Options Send visitor home, browse versus send, vanished guest guard, status text bounds");
 }
 ''')
