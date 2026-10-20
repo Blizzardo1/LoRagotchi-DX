@@ -9,7 +9,7 @@ struct LoRaFishVisit {
   Phase phase = Idle;
   uint8_t attempts = 0;
   uint32_t due = 0, deadline = 0, wait = 0;
-  bool queueBlocked = false;
+  bool queueBlocked = false, awaitingTxDrain = false;
   char request[112] = {};
 
   void begin(Phase next, uint32_t now) {
@@ -18,6 +18,7 @@ struct LoRaFishVisit {
     due = now;
     deadline = now + LoRaFishTiming::phaseMs;
     queueBlocked = false;
+    awaitingTxDrain = false;
   }
   bool running() const { return phase == Request || phase == Commit || phase == Recall; }
   bool ready(uint32_t now) const { return running() && LoRaFishTiming::reached(now, due); }
@@ -27,10 +28,23 @@ struct LoRaFishVisit {
   }
   void sent(uint32_t now, uint32_t estimate, uint32_t random, bool queued) {
     if (queued) ++attempts;
+    awaitingTxDrain = queued;
+    queueBlocked = false;
     wait = LoRaFishTiming::retryMs(queued ? estimate : 0, attempts, random);
     due = now + wait;
   }
-  void stop() { phase = Idle; }
+  void observeTx(uint32_t now, bool pending) {
+    if (!awaitingTxDrain) return;
+    if (pending) {
+      queueBlocked = true;
+    } else {
+      // Extend once for this queued send, never for unrelated RX or later TX.
+      if (queueBlocked) due = now + wait;
+      queueBlocked = false;
+      awaitingTxDrain = false;
+    }
+  }
+  void stop() { phase = Idle; queueBlocked = awaitingTxDrain = false; }
 };
 
 struct LoRaFishReservation {

@@ -1,4 +1,4 @@
-# Busy-mesh visits: first pass
+# Busy-mesh visits and arrival recovery
 
 This change improves visit setup and explicit recall over ordinary MeshCore
 routes. Repeaters need no LoRagotchi modifications. It is not an airtime quota,
@@ -17,8 +17,10 @@ an RX backlog redesign, or an over-the-air acceptance result.
   to backoff, **not** to the transport estimate. Saturation and deadlines are
   rollover-safe; an exceptionally long estimate may outlast the phase budget.
 - A retry waits for the local outbound queue to drain and the radio to return
-  to idle receive mode. After observed queue/radio blockage, it allows a fresh
-  response window. This is conservative queue observation, not a precise
+  to idle receive mode. Each queued send can receive one fresh response window
+  after its observed local TX backlog drains. Unrelated incoming traffic and
+  subsequent outgoing traffic do not restart that timer. This is conservative
+  queue observation, not a precise
   per-packet transmission-complete callback or a network-wide congestion meter.
 - The phase deadline bounds automatic retransmissions; it cannot retract a
   packet already accepted into MeshCore's queue.
@@ -33,6 +35,32 @@ an RX backlog redesign, or an over-the-air acceptance result.
 - Timers and reservation expiry run in `MyMesh::loop()`, not drawing code.
   The DX page displays CALLING, DELIVERING, UNCONFIRMED, RECALLING, or NO REPLY;
   the aquarium no longer shows a normally swimming local fish during COMMIT.
+
+## Arrival confirmation (DX)
+
+MeshCore receipt ACKs and LFG1 acceptance messages are distinct. A transport ACK
+for COMMIT does not prove the fish was accepted, so home becomes FISH AWAY only
+after the matching application's ARRIVED. No new wire opcode is introduced.
+
+- On accepted COMMIT, the host starts one RAM-only ARRIVED outbox bound to the
+  full owner key, transaction and fish ID. It retries from the mesh loop without
+  requiring another COMMIT or a display refresh. The existing MeshCore ACK is
+  tracked for every successfully queued confirmation, including a zero hash.
+- ARRIVED uses the same route-aware jitter, queue/radio gate, four queued sends
+  and 120-second budget as setup. Failed enqueue consumes no queued-send slot,
+  but is paced and bounded. Duplicate COMMIT cannot reset or bypass this budget,
+  even after exhaustion or receipt confirmation.
+- A matching ACK for any queued attempt stops the job once. A delayed ACK can
+  still settle an exhausted job. No ACK or timeout removes the visitor, grants
+  a reward, or claims saved home state. A missing contact never redirects it.
+- Starting a return cancels the confirmation job; new intake, cleared session
+  identity or reboot also invalidates it. Existing RETURN ACK handling remains.
+  Already queued MeshCore packets cannot be retracted; late ARRIVED is ignored
+  by a home that has already accepted RETURN.
+- Update both DX radios to get the corrected sender timer and independent host
+  confirmation retries in either direction. Older peers still understand the
+  messages, but retain their own retry limitations. RX firmware is unchanged by
+  this follow-up and continues its existing durable capture/fast-return policy.
 
 ## Receiver lease (DX and RX)
 
@@ -80,7 +108,7 @@ policy; this patch does not provide reboot-safe exactly-once travel.
 - No full per-peer/global airtime quota, BUSY cooldown, or route-refresh policy.
 - RX still has four durable slots; unresolved returns can block intake. Fair
   admission and safe archive/operator recovery are separate work.
-- Immediate receiver responses and existing host RETURN jobs have not been
+- Other immediate receiver responses and existing host RETURN jobs have not been
   converted into a new global traffic scheduler.
 - A lost request acceptance can leave the receiver reserved until its lease
   expires; a newly started transaction may receive BUSY meanwhile.
@@ -93,6 +121,7 @@ Run the production-handler checks with the matching RX checkout:
 
 ```sh
 python3 test/ui/check_busy_mesh.py ../loragotchi-rx-busy-mesh
+python3 test/ui/check_arrival_recovery.py
 python3 test/ui/check_dx_handlers.py
 python3 test/ui/check_dx_colour_retries.py ../loragotchi-rx-busy-mesh
 python3 test/ui/check_dx_storage.py

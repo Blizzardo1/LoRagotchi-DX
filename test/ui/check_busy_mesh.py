@@ -34,6 +34,7 @@ static void reset(MyMesh& m,ContactInfo peer,uint32_t time=100) {
  loragotchiDXHome=LoRaGotchiDXHomeState{};loragotchiDXGuest=LoRaGotchiDXGuestState{};
  loragotchiDXVisit=LoRaFishVisit{};loragotchiDXReservation=LoRaFishReservation{};
  loragotchiDXGuestReturn=LoRaFishGuestReturn{};loRaFishCommitFrame=LoRaFishCommitFrame{};
+ loRaFishArrival=LoRaFishArrival{};
  loragotchiDXHome.fishid=8;loragotchiDXHome.txid=7;loragotchiDXHome.destinationKnown=true;
  memcpy(loragotchiDXHome.destinationKey,peer.id.pub_key,32);
  loragotchiDXHome.pending=true;
@@ -52,10 +53,11 @@ int main() {
  // Old three-second retries would have sent three copies during this wait.
  now=10100;m.serviceLoRaFishVisit();assert(m.sent.size()==1);
  m.receive(peer,"LFG1|ACK|7|8");assert(m.sent.size()==1 && loragotchiDXVisit.deadline==deadline);
- now=loragotchiDXVisit.due;m.queueReady=false;
+ now=loragotchiDXVisit.due;m.queueReady=false;m.txPending=true;
  m.serviceLoRaFishVisit();assert(m.sent.size()==1 && loragotchiDXVisit.attempts==1);
- m.queueReady=true;m.serviceLoRaFishVisit();assert(m.sent.size()==1);
- now=loragotchiDXVisit.due;m.serviceLoRaFishVisit();assert(m.sent.size()==2 && m.sent.back()==commit);
+ // Later unrelated TX blocks enqueue, but cannot restart the response window.
+ m.queueReady=true;m.txPending=false;m.serviceLoRaFishVisit();
+ assert(m.sent.size()==2 && m.sent.back()==commit);
  m.estimate=40000;now=loragotchiDXVisit.due;m.serviceLoRaFishVisit();
  assert(loragotchiDXVisit.due-now>=82000);
  now=deadline;m.serviceLoRaFishVisit();

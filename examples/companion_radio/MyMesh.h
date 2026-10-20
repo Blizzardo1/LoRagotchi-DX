@@ -168,7 +168,10 @@ public:
   void serviceLoRaFishVisit();
   void expireLoRaFishReservation();
   bool loRaFishQueueReady() const;
+  bool loRaFishTxPending() const;
   uint32_t loRaFishRandom();
+  bool acknowledgeLoRaFishArrival(uint32_t hash);
+  void serviceLoRaFishArrival();
   bool returnLoRaFishGuest();
   bool acknowledgeLoRaFishGuestReturn(uint32_t hash);
   void serviceLoRaFishGuestReturn();

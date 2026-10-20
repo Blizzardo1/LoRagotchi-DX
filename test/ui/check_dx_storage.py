@@ -31,6 +31,7 @@ pre = r'''
 #include <vector>
 #include "examples/companion_radio/LoRaFishGuestReturn.h"
 #include "examples/companion_radio/LoRaFishVisit.h"
+#include "examples/companion_radio/LoRaFishArrival.h"
 static std::map<std::string,std::vector<uint8_t>> records;
 struct Preferences {
   bool begin(const char*,bool){return true;}
@@ -51,6 +52,7 @@ int main(){
   static_assert(offsetof(LoRaGotchiDXHomeState,destinationKey)==48,"legacy home layout");
   records["home"]={bytes,bytes+48};
   loragotchiDXGuest.present=true;loragotchiDXGuestReturn.start(42);
+  uint8_t owner[32]={1};loRaFishArrival.start(owner,7,8,42);
   loragotchiDXLoad();
 #ifdef ESP32
   assert(loragotchiDXHome.fishid==0xCAFE1234);
@@ -59,6 +61,7 @@ int main(){
 #endif
   assert(!loragotchiDXHome.away && !loragotchiDXHome.destinationKnown && !loragotchiDXHome.completedVisit);
   assert(!loragotchiDXGuest.present && !loragotchiDXGuest.ownerKnown && loragotchiDXGuestReturn.status==LoRaFishGuestReturn::Idle);
+  assert(!loRaFishArrival.active);
   puts("PASS legacy identity retained where supported; reboot clears sessions and retry jobs");
 #ifdef ESP32
   loragotchiDXHome.fishid=99;loragotchiDXHome.away=true;loragotchiDXHome.completedVisit=true;
