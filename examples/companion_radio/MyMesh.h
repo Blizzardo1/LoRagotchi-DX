@@ -159,6 +159,7 @@ public:
 
   void begin();
 #ifdef LORAFISH_UI
+  int sendLoRaFishCommit(const ContactInfo& destination);
   bool returnLoRaFishGuest();
   bool acknowledgeLoRaFishGuestReturn(uint32_t hash);
   void serviceLoRaFishGuestReturn();

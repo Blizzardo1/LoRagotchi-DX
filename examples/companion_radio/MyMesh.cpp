@@ -12,6 +12,8 @@
 #endif
 
 #ifdef LORAFISH_UI
+#include "LoRaFishCommit.h"
+static LoRaFishCommitFrame loRaFishCommitFrame;
 LoRaGotchiDXHomeState loragotchiDXHome;
 LoRaGotchiDXGuestState loragotchiDXGuest;
 LoRaFishGuestReturn loragotchiDXGuestReturn;
@@ -594,14 +596,11 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     } else if (strncmp(text,"LFG1|ACK|",9)==0 && fromDestination &&
         sscanf(text+9,"%lu|%lu",&tx,&fid)==2 &&
         loragotchiDXHome.pending && tx==loragotchiDXHome.txid && fid==loragotchiDXHome.fishid) {
-      char msg[96]; snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu|%c|%u|%u|%u|%u",tx,fid,
-        loragotchiDXLocalHasColorGenes ? 'C' : 'M',
-        (unsigned)loragotchiDXLocalColorIndex,
-        (unsigned)loragotchiDXLocalScalesColorIndex,
-        (unsigned)loragotchiDXLocalEyesColorIndex,
-        (unsigned)LORAFISH_MONO_PIXEL_TINT_RGB565);
-      uint32_t ack=0,to=0;
-      int r=sendMessage(from,getRTCClock()->getCurrentTime(),0,msg,ack,to);
+      loRaFishCommitFrame.prepare(from.id.pub_key, tx, fid,
+        loragotchiDXLocalHasColorGenes, loragotchiDXLocalColorIndex,
+        loragotchiDXLocalScalesColorIndex, loragotchiDXLocalEyesColorIndex,
+        LORAFISH_MONO_PIXEL_TINT_RGB565);
+      int r=sendLoRaFishCommit(from);
       if(r>=0) {
         // Do NOT mark the fish away until the destination confirms ARRIVED.
         loragotchiDXHome.pending=false;
@@ -2695,6 +2694,18 @@ bool MyMesh::acknowledgeLoRaFishGuestReturn(uint32_t hash) {
   loragotchiDXGuest.reserved = false;
   loragotchiDXSave();
   return true;
+}
+
+int MyMesh::sendLoRaFishCommit(const ContactInfo& destination) {
+  if ((!loragotchiDXHome.pending && !loragotchiDXHome.committing) ||
+      !loragotchiDXHome.destinationKnown ||
+      memcmp(destination.id.pub_key, loragotchiDXHome.destinationKey, 32))
+    return MSG_SEND_FAILED;
+  const char* payload = loRaFishCommitFrame.forVisit(destination.id.pub_key,
+      loragotchiDXHome.txid, loragotchiDXHome.fishid);
+  if (!payload) return MSG_SEND_FAILED;
+  uint32_t ack = 0, timeout = 0;
+  return sendMessage(destination, getRTCClock()->getCurrentTime(), 0, payload, ack, timeout);
 }
 
 bool MyMesh::returnLoRaFishGuest() {

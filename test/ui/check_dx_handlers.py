@@ -21,13 +21,16 @@ pre=r'''
 #include <string>
 #include <vector>
 #include "examples/companion_radio/LoRaFishGuestReturn.h"
+#include "examples/companion_radio/LoRaFishCommit.h"
 #define LORAFISH_MONO_PIXEL_TINT_RGB565 65535
+#define MSG_SEND_FAILED -1
 static uint32_t now=0;unsigned long millis(){return now;}
 struct {template<typename... A> void printf(const char*,A...){}void println(const char*){}} Serial;
 struct ContactInfo {struct {uint8_t pub_key[32]={};} id;char name[32]="Guest";};
 '''
 globals=r'''
 LoRaGotchiDXHomeState loragotchiDXHome;LoRaGotchiDXGuestState loragotchiDXGuest;
+static LoRaFishCommitFrame loRaFishCommitFrame;
 LoRaFishGuestReturn loragotchiDXGuestReturn;
 bool loragotchiDXLocalColorCapable=false,loragotchiDXLocalHasColorGenes=true,loragotchiDXReturnedFromMonochrome=false;
 uint8_t loragotchiDXLocalColorIndex=1,loragotchiDXLocalScalesColorIndex=2,loragotchiDXLocalEyesColorIndex=3;
@@ -41,6 +44,7 @@ public:
  int sendMessage(const ContactInfo& c,uint32_t,int,const char* msg,uint32_t& ack,uint32_t& timeout){sent.emplace_back(msg);destinations.push_back(c.id.pub_key[0]);ack=++hash;timeout=estimate;return failure?-1:0;}
  ContactInfo* lookupContactByPubKey(const uint8_t* key,int size){for(auto& c:contacts)if(!memcmp(c.id.pub_key,key,size))return &c;return nullptr;}
  void receive(const ContactInfo&,const char*);
+ int sendLoRaFishCommit(const ContactInfo&);
  bool returnLoRaFishGuest();void serviceLoRaFishGuestReturn();
  bool acknowledgeLoRaFishGuestReturn(uint32_t);
 };
@@ -174,8 +178,12 @@ int main(){
  puts("PASS ordinary and malformed community markers return the fish without awarding a bonus");
 }
 '''
-with tempfile.TemporaryDirectory(prefix='lrx-dx-test-') as tmp:
-    path=Path(tmp);cpp=path/'dx.cpp';exe=path/'dx'
-    cpp.write_text(pre+structs+globals+receive+'\n'+block('bool MyMesh::returnLoRaFishGuest()')+'\n'+block('bool MyMesh::acknowledgeLoRaFishGuestReturn(')+'\n'+block('void MyMesh::serviceLoRaFishGuestReturn()')+ui_globals+block('static void loRaFishObserveTravelTransitions()',ui_source)+main)
-    subprocess.run(['g++','-std=c++17','-I',str(root),str(cpp),'-o',str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
+def run_checks():
+    with tempfile.TemporaryDirectory(prefix='lrx-dx-test-') as tmp:
+        path=Path(tmp);cpp=path/'dx.cpp';exe=path/'dx'
+        cpp.write_text(pre+structs+globals+receive+'\n'+block('int MyMesh::sendLoRaFishCommit(')+'\n'+block('bool MyMesh::returnLoRaFishGuest()')+'\n'+block('bool MyMesh::acknowledgeLoRaFishGuestReturn(')+'\n'+block('void MyMesh::serviceLoRaFishGuestReturn()')+ui_globals+block('static void loRaFishObserveTravelTransitions()',ui_source)+main)
+        subprocess.run(['g++','-std=c++17','-I',str(root),str(cpp),'-o',str(exe)],check=True)
+        subprocess.run([str(exe)],check=True)
+
+if __name__ == "__main__":
+    run_checks()

@@ -99,6 +99,10 @@ struct {bool returnLoRaFishGuest(){++returnCalls;return true;}int returnCalls=0;
   int sendMessage(ContactInfo& c,uint32_t,int,const char* msg,uint32_t&,uint32_t&){
     ++dxSends;lastDestination=c.index;lastMessage=msg;return 0;
   }
+  int sendLoRaFishCommit(ContactInfo& c){
+    ++dxSends;lastDestination=c.index;lastMessage="LFG1|COMMIT|mock";
+    return 0; // packet contents are covered by check_dx_colour_retries.py
+  }
 } the_mesh;
 class BoundsDisplay : public DisplayDriver {
   int x=0,y=0,size=1;

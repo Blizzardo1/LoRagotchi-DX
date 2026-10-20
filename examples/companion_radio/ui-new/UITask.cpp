@@ -2164,11 +2164,8 @@ static void serviceLoRaFishDXCommit() {
   }
   ContactInfo dest;
   if(!loRaFishDXDestination(dest)) return;
-  char msg[80];
-  snprintf(msg,sizeof(msg),"LFG1|COMMIT|%lu|%lu",
-           (unsigned long)loragotchiDXHome.txid,(unsigned long)loragotchiDXHome.fishid);
-  uint32_t ack=0,to=0;
-  int r=the_mesh.sendMessage(dest,the_mesh.getRTCClock()->getCurrentTime(),0,msg,ack,to);
+  // Repeat the complete original appearance, even if that first packet was lost.
+  int r=the_mesh.sendLoRaFishCommit(dest);
   loRaFishDXCommitLastSent=now;
   loRaFishDXCommitRetries++;
   Serial.printf("[LFG1 PEER] COMMIT RETRY %u TX result=%d\n",(unsigned)loRaFishDXCommitRetries,r);
