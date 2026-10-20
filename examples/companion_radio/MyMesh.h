@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include "LoRaFishGuestReturn.h"
+#include "LoRaFishVisit.h"
 
 
 extern float lorafish_last_rssi;
@@ -37,6 +38,8 @@ struct LoRaGotchiDXGuestState {
 extern LoRaGotchiDXHomeState loragotchiDXHome;
 extern LoRaGotchiDXGuestState loragotchiDXGuest;
 extern LoRaFishGuestReturn loragotchiDXGuestReturn;
+extern LoRaFishVisit loragotchiDXVisit;
+extern LoRaFishReservation loragotchiDXReservation;
 extern bool loragotchiDXLocalColorCapable;
 extern bool loragotchiDXLocalHasColorGenes;
 extern uint8_t loragotchiDXLocalColorIndex;
@@ -160,6 +163,15 @@ public:
   void begin();
 #ifdef LORAFISH_UI
   int sendLoRaFishCommit(const ContactInfo& destination);
+  void trackLoRaFishRequest(const char* request, uint32_t timeout);
+  bool recallLoRaFish();
+  void serviceLoRaFishVisit();
+  void expireLoRaFishReservation();
+  bool loRaFishQueueReady() const;
+  bool loRaFishTxPending() const;
+  uint32_t loRaFishRandom();
+  bool acknowledgeLoRaFishArrival(uint32_t hash);
+  void serviceLoRaFishArrival();
   bool returnLoRaFishGuest();
   bool acknowledgeLoRaFishGuestReturn(uint32_t hash);
   void serviceLoRaFishGuestReturn();
