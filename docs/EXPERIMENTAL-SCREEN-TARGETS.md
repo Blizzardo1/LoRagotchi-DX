@@ -53,6 +53,10 @@ These are BLE companion builds. Existing supported DX images remain in the regul
 | `nibble_screen_connect_LoRaGotchi_DX_ble` | `nibble_screen_connect_companion_radio_ble_` | SSD1306Display | ESP32 application BIN |
 | `nibble_zero_connect_LoRaGotchi_DX_ble` | `nibble_zero_connect_companion_radio_ble_` | SSD1306Display | ESP32 application BIN |
 
+## Tight-flash profiles
+
+T-LoRa V2.1, Station G2 and Station G3 omit optional environmental/I2C sensor add-on drivers to fit the pet UI in their existing application partitions. Board battery readings, radio limits/pins, display/input, storage layouts, BLE, and configured GPS support are retained. These images do not support those optional environmental sensor add-ons; no repartitioning is required.
+
 ## Not enabled
 
 E-ink profiles (Wireless Paper, E213/E290, T-Echo/T-Echo Lite, MeshPocket, ThinkNode M1/M5/M6/M8, Wio Tracker e-ink) and null/no-display profiles are intentionally excluded. The OLED T-Echo Card is a separate device and is not classified as e-ink.
