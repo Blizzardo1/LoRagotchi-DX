@@ -26,6 +26,8 @@ pre=r'''
 #include "examples/companion_radio/ui-new/LoRaFishMenu.h"
 #include "examples/companion_radio/LoRaFishGuestReturn.h"
 static LoRaFishGuestReturn loragotchiDXGuestReturn;
+#include "examples/companion_radio/LoRaFishVisit.h"
+static LoRaFishVisit loragotchiDXVisit;
 #include "examples/companion_radio/ui-new/AdvertMenu.h"
 #include "examples/companion_radio/ui-new/PetResetConfirmation.h"
 #include "examples/companion_radio/ui-new/LoRaFishText.h"
@@ -101,6 +103,12 @@ struct {bool returnLoRaFishGuest(){++returnCalls;return true;}int returnCalls=0;
   int sendMessage(ContactInfo& c,uint32_t,int,const char* msg,uint32_t&,uint32_t&){
     ++dxSends;lastDestination=c.index;lastMessage=msg;return 0;
   }
+  void trackLoRaFishRequest(const char*,uint32_t){}
+  bool recallLoRaFish(){
+    auto* c=lookupContactByPubKey(loragotchiDXHome.destinationKey,32);
+    if(!c)return false;uint32_t ack=0,to=0;
+    sendMessage(*c,1,0,"LFG1|RECALL|mock",ack,to);return true;
+  }
   int sendLoRaFishCommit(ContactInfo& c){
     ++dxSends;lastDestination=c.index;lastMessage="LFG1|COMMIT|mock";
     return 0; // packet contents are covered by check_dx_colour_retries.py
@@ -141,7 +149,7 @@ static void loRaFishRegisterDisplayActivity(DisplayDriver&){}
 static uint32_t loRaFishScreenTimeoutMs(){return 15000;}
 class UITask;
 '''
-names='loRaFishDXCommitLastSent loRaFishDXCommitRetries loRaFishChannelNotice loRaFishNameNotice loRaFishDXDestinationKey loRaFishDXDestinationKnown LORAFISH_DX_CONTACT_PAGE loRaFishDXRequestStarted loRaFishPage loRaFishOption loRaFishValuePicker loRaFishDisplayOption loRaFishTimeField loRaFishTimeoutField loRaFishSoundField LORAFISH_PAGE_COUNT LORAFISH_RESET_CONFIRM_PAGE loRaFishResetConfirmation LORAFISH_ADVERT_PAGE loRaFishAdvertMenu loRaFishTheme loRaFishColor loRaFishScaleColor loRaFishEyeColor loRaFishColorField loRaFishNeedsAppearanceSetup loRaFishColorDisplay loRaFishSimulationMode loRaFishGuessNumber loRaFishGuessPrevious loRaFishGuessRounds loRaFishGuessScore loRaFishGuessHigher loRaFishGuessResultShown loRaFishGuessCorrect loRaFishGuessComplete loRaFishTimeoutAwakeSetting loRaFishTimeoutAsleepSetting loRaFishTimeoutShortNames loRaFishBrightnessSetting loRaFishBrightnessNames loRaFishBrightnessNeedsApply loRaFishAlwaysOnDimSetting loRaFishAlwaysOnDimNames loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound loRaFishMessageSound loRaFishVolumeNames loRaFishWakeSoundNames loRaFishSleepSoundNames loRaFishMessageSoundNames loRaFishWakeMelodies loRaFishSleepMelodies loRaFishMessageMelodies loRaFishSleepHour loRaFishWakeHour loRaFishUtcOffsetQuarters loRaFishColorNames'.split()
+names='loRaFishChannelNotice loRaFishNameNotice loRaFishDXDestinationKey loRaFishDXDestinationKnown LORAFISH_DX_CONTACT_PAGE loRaFishPage loRaFishOption loRaFishValuePicker loRaFishDisplayOption loRaFishTimeField loRaFishTimeoutField loRaFishSoundField LORAFISH_PAGE_COUNT LORAFISH_RESET_CONFIRM_PAGE loRaFishResetConfirmation LORAFISH_ADVERT_PAGE loRaFishAdvertMenu loRaFishTheme loRaFishColor loRaFishScaleColor loRaFishEyeColor loRaFishColorField loRaFishNeedsAppearanceSetup loRaFishColorDisplay loRaFishSimulationMode loRaFishGuessNumber loRaFishGuessPrevious loRaFishGuessRounds loRaFishGuessScore loRaFishGuessHigher loRaFishGuessResultShown loRaFishGuessCorrect loRaFishGuessComplete loRaFishTimeoutAwakeSetting loRaFishTimeoutAsleepSetting loRaFishTimeoutShortNames loRaFishBrightnessSetting loRaFishBrightnessNames loRaFishBrightnessNeedsApply loRaFishAlwaysOnDimSetting loRaFishAlwaysOnDimNames loRaFishBuzzerVolume loRaFishWakeSound loRaFishSleepSound loRaFishMessageSound loRaFishVolumeNames loRaFishWakeSoundNames loRaFishSleepSoundNames loRaFishMessageSoundNames loRaFishWakeMelodies loRaFishSleepMelodies loRaFishMessageMelodies loRaFishSleepHour loRaFishWakeHour loRaFishUtcOffsetQuarters loRaFishColorNames'.split()
 parts=[pre]+[declaration(name) for name in names]
 parts += [block('struct LoRaFishThemePalette')+';',declaration('loRaFishThemes'),
  'static constexpr uint8_t LORAFISH_COLOR_THEME_COUNT=4,LORAFISH_COLOR_ALLELE_COUNT=7;',
@@ -151,7 +159,7 @@ for name in ['static void beginLoRaFishChannelNotice(', 'static bool dismissLoRa
  'static void cancelLoRaFishValue(', 'static void openLoRaFishValue(', 'static void selectLoRaFishValue(',
  'static void loRaFishFormatUtcOffset(', 'static void drawLoRaFishHeader(',
  'static const char* loRaFishOptionLabel(', 'static void drawLoRaFishMenuHint(',
- 'static bool loRaFishDXDestination(', 'static void serviceLoRaFishDXCommit(', 'static bool loRaFishDXEligible(', 'static uint32_t loRaFishDXContactCount(', 'static bool loRaFishDXGetContact(', 'static void moveLoRaFishDXContact(', 'static void drawLoRaFishName(', 'static void drawLoRaFishNameNotice(', 'static void drawLoRaFishDX(',
+ 'static bool loRaFishDXDestination(', 'static bool loRaFishDXEligible(', 'static uint32_t loRaFishDXContactCount(', 'static bool loRaFishDXGetContact(', 'static void moveLoRaFishDXContact(', 'static void drawLoRaFishName(', 'static void drawLoRaFishNameNotice(', 'static void drawLoRaFishDX(',
  'static void drawLoRaFishValuePicker(', 'static void drawLoRaFishOptions(',
  'static void closeLoRaFishAdvertMenu(', 'static void drawLoRaFishAdvertMenu(',
  'static void cancelLoRaFishReset(', 'static void drawLoRaFishResetConfirmation(',
@@ -203,7 +211,7 @@ int main(){
   for(int contacts:{0,1,3}) for(int state=0;state<4;++state) {
     the_mesh.contacts=contacts;
     loragotchiDXHome.away=state==3;loragotchiDXHome.pending=state==1;
-    loragotchiDXHome.committing=state==2;loRaFishDXRequestStarted=0;
+    loragotchiDXHome.committing=state==2;loragotchiDXVisit=LoRaFishVisit{};
     loRaFishDXContactIndex=0;loRaFishPage=0;
     const int sent=the_mesh.dxSends;
     for(int press=0;press<5;++press) shortPress(KEY_NEXT);
@@ -234,6 +242,7 @@ int main(){
     the_mesh.contacts=3;loragotchiDXHome.away=state==3;
     loragotchiDXHome.pending=state==1;loragotchiDXHome.committing=state==2;
     loragotchiDXHome.destinationIndex=2;loRaFishDXContactIndex=0;
+    memset(loragotchiDXHome.destinationKey,0,32);loragotchiDXHome.destinationKey[0]=3;loragotchiDXHome.destinationKnown=true;
     task._alert_expiry=0;loRaFishPage=4;
     const int sent=the_mesh.dxSends;
     task.handleLongPress(KEY_ENTER);assert(the_mesh.dxSends==sent);

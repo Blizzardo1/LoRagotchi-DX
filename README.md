@@ -61,12 +61,18 @@ For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](G
 | M5Stack CardPuter | cardputer_loragotchi |
 | Heltec T114 | Heltec_t114_LoRaFish_companion_ble -t create_uf2 |
 | Heltec T096 | Heltec_t096_LoRaFish_companion_ble -t create_uf2 |
-| LilyGo T-Deck | TDeck_Loragotchi_dx_ble |
+| LilyGo T-Deck | LilyGo_TDeck_loragotchi_dx_ble / LilyGo_TDeck_loragotchi_dx_usb |
 
 | Untested nodes | build Environment |
 | --- | --- |
 | T-Beam (SX1262) | Tbeam_SX1262_LoRaFish_companion_ble
 | T-Beam (SX1276) | Tbeam_SX1276_LoRaFish_companion_ble
+
+## Additional experimental TFT/OLED devices
+
+See the [experimental screen target matrix](docs/EXPERIMENTAL-SCREEN-TARGETS.md).
+These additional builds are **experimental and have not been tested on real hardware**.
+Screenless and e-ink variants are excluded; optional-display boards require a fitted panel and controls.
 
 ## Building
 
