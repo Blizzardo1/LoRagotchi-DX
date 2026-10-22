@@ -13,8 +13,8 @@ Both run on relevant PRs to `main`/`dev`, pushes to `main`, and manual
 release/experimental-branch triggers remain. PR jobs check out the exact PR head,
 not a synthetic merge revision. Native and production host checks run on GitHub;
 the standard matrix waits for its checks before compiling. The cross-repository
-colour retry integration test still needs independent RX/Aquarium trees and is
-not run by these self-contained workflows.
+colour retry and busy-mesh integration tests still need independent RX/Aquarium
+trees and are explicitly reported as not run by these self-contained workflows.
 
 Download a board artifact from the completed workflow run. Names include
 `standard-` or `experimental-`, the exact environment and source commit. Artifacts

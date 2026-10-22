@@ -44,9 +44,10 @@ jobs:
           import subprocess
           from pathlib import Path
           for test in sorted(Path('test/ui').glob('check_*.py')):
-              # This integration test needs independent RX/Aquarium checkouts;
-              # it remains in the local retained evidence, not silently mocked in CI.
-              if test.name == 'check_dx_colour_retries.py':
+              # These integration tests need independent RX/Aquarium checkouts;
+              # retain their local evidence rather than silently mocking them in CI.
+              if test.name in {'check_dx_colour_retries.py', 'check_busy_mesh.py'}:
+                  print(f"Not run in standalone DX CI: {test.name} (requires RX/Aquarium)", flush=True)
                   continue
               subprocess.run(['python3', str(test)], check=True)
           PYTEST
