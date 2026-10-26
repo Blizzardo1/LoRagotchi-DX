@@ -24,8 +24,10 @@ public:
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
+  virtual void forceFullRefresh() {} // next refresh will be full for eink
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;
+  virtual void setBrightness(uint8_t brightness) {}
   virtual void clear() = 0;
   virtual void startFrame(ColorVal bkg = UIColor::window_bkg) = 0;
   virtual void setTextSize(int sz) = 0;
@@ -107,4 +109,10 @@ public:
   }
   
   virtual void endFrame() = 0;
+
+  // Optional band (strip) rendering. Drivers that don't support it keep these defaults.
+  virtual int stripRows() const { return 0; }
+  virtual int physicalHeight() const { return 0; }
+  virtual void beginStrip(int physY0) { (void)physY0; }
+  virtual void endStrip() {}
 };

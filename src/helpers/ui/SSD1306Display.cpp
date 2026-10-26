@@ -25,7 +25,9 @@ bool SSD1306Display::begin() {
   #ifdef DISPLAY_ROTATION
   display.setRotation(DISPLAY_ROTATION);
   #endif
-  return display.begin(SSD1306_SWITCHCAPVCC, DISPLAY_ADDRESS, true, false) && i2c_probe(Wire, DISPLAY_ADDRESS);
+  const bool initialized=display.begin(SSD1306_SWITCHCAPVCC, DISPLAY_ADDRESS, true, false) && i2c_probe(Wire, DISPLAY_ADDRESS);
+  if (initialized) setBrightness(_brightness);
+  return initialized;
 }
 
 void SSD1306Display::turnOn() {
@@ -35,6 +37,7 @@ void SSD1306Display::turnOn() {
     if (_peripher_power) begin();  // re-init display after power was cut
   }
   display.ssd1306_command(SSD1306_DISPLAYON);
+  setBrightness(_brightness);
 }
 
 void SSD1306Display::turnOff() {
@@ -47,6 +50,14 @@ void SSD1306Display::turnOff() {
       _peripher_power->release();
     }
     _isOn = false;
+  }
+}
+
+void SSD1306Display::setBrightness(uint8_t brightness) {
+  _brightness=brightness;
+  if (_isOn) {
+    display.ssd1306_command(0x81);
+    display.ssd1306_command(_brightness);
   }
 }
 

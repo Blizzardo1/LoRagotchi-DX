@@ -11,7 +11,9 @@
 
 #ifdef DISPLAY_CLASS
 #include <helpers/ui/MomentaryButton.h>
-#ifdef HELTEC_T114_WITH_DISPLAY
+#ifdef T114_LCD_DRIVER
+#include <helpers/ui/ST7789LCDDisplay.h>
+#elif defined(HELTEC_T114_WITH_DISPLAY)
 #include <helpers/ui/ST7789Display.h>
 #else
 #include "helpers/ui/NullDisplayDriver.h"

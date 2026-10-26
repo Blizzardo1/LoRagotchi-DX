@@ -475,6 +475,7 @@ bool ST7735Display::begin() {
     sendCommand(ST77XX_DISPON);
     
     _isOn = true;
+    setBrightness(_brightness);
   }
   return true;
 }
@@ -518,6 +519,15 @@ void ST7735Display::turnOn() {
     // Now turn on the backlight
     // digitalWrite(PIN_TFT_LEDA_CTL, PIN_TFT_LEDA_CTL_ACTIVE);
     _isOn = true;
+    setBrightness(_brightness);
+  }
+}
+
+void ST7735Display::setBrightness(uint8_t brightness) {
+  _brightness=brightness;
+  if (_isOn) {
+    const uint8_t output=PIN_TFT_LEDA_CTL_ACTIVE==LOW ? 255-_brightness : _brightness;
+    analogWrite(PIN_TFT_LEDA_CTL,output);
   }
 }
 
@@ -526,8 +536,8 @@ void ST7735Display::turnOff() {
     sendCommand(ST77XX_DISPOFF);
 
     //digitalWrite(PIN_TFT_RST, LOW);
-    // Now turn off the backlight
-    digitalWrite(PIN_TFT_LEDA_CTL, !PIN_TFT_LEDA_CTL_ACTIVE);
+    const uint8_t backlightOff=PIN_TFT_LEDA_CTL_ACTIVE==LOW ? 255 : 0;
+    analogWrite(PIN_TFT_LEDA_CTL,backlightOff);
     _isOn = false;
 
     if (_peripher_power) _peripher_power->release();

@@ -2,57 +2,77 @@
 
 **LoRaGotchi DX v1.0 — M0YNW** is a virtual LoRa fish built on the MeshCore transport. Your fish grows through pet stages, lives in a small aquarium UI, and can travel over the mesh to visit another LoRaGotchi device before being recalled home.
 
-## v1.0 highlights
+For setup, controls, menus, pet behavior, and DX travel, see [Getting Started](Getting_Started.md).
 
+## v1.0 highlights
 - LoRaGotchi virtual-pet aquarium and evolution/gameplay
 - DX fish visiting using the LFG1 protocol
-- Send, acknowledge, commit, arrival confirmation and recall/return flow
-- Host and visiting fish can coexist and swim independently
-- Visiting fish keeps its own evolution stage
-- Travel is locked while the local fish is asleep
-- DX session state is cleared on reboot as a recovery mechanism
+    - LFG1 protocol upgraded to include colour information
+    - Improved the visiting and eating animations
+    - Send, acknowledge, commit, arrival confirmation and recall/return flow
+    - Host and visiting fish can coexist and swim independently
+    - Visiting fish keeps its own evolution stage
+    - A fish away from it's own tank will no longer poop in it's own tank
+    - Travel is locked while the local fish is asleep
+    - DX session state is cleared on reboot as a recovery mechanism
 - LoRaGotchi / M0YNW boot branding
 - MeshCore remains the underlying radio/mesh transport
+- Buzzer support
+- Colour screen support
+- Higher/Lower game - 5 rounds; each correct guess adds 1 Happy (max +5 per game)
 
+## Testing features:
+- Emoji-safe names and fish-marked DX discovery
+    - Fish markers 🐟 🐠 🐡 🦈 render as `><>`; unsupported Unicode renders as spaces
+    - The DX picker lists only saved companion contacts with a fish marker in their name
+    - Dismissible boot reminder for unmarked names; no automatic renaming
+- LoRagotchi-local flash and display savings
+    - Five-minute passive-counter checkpoints; immediate care/lifecycle/settings saves
+    - Identical-record suppression and bounded retries after failed file writes
+    - Shared five-second battery display cache using MeshCore's existing readings
+    - Unchanged static menus skip redraws; dimmed animation keeps its normal cadence
+    - Shared MeshCore, radio, board power configuration and save formats unchanged
+- Lifecycle improvements, basic fish-colour DNA, breeding & self-fertilization
+    - Your fish now has generations > everyone starts with a 1st gen fish. old-age death no longer ends the LoRagotchi game
+    - Your game will ask for what colour your fish should start as. breeding can evolve the fish.
+- happiness re-balance
+    - RF interactions count toward meals, without a direct Happy bonus
+    - +3 Happy per ten-event meal, limited to one meal per hour; no queued backlog
+    - -1 Happy per 30 awake minutes, plus -1 per waste piece at the same interval
+    - Scheduled sleep, eggs and Memorial pause decay; turning the screen off does not
+    - Cleaning stays +3; new generations start at 80; Happy stays between 0 and 100
+- M2 Partition change - dropped 2nd app partition in favour of a larger primary app partition.
+    - alleviates flash from 95.5% to about 42%, in line with other nodes.
+    - retained NVS, Filesystem and Coredump partitions.
+    - Disables OTA updates (not used or planned)
+- M5Stack CardPuter
+    - Updated graphics and keyboard controls for the menu
+- LilyGo T-Deck
+    - Framebuffer for the display.
+ 
+  
 ## Supported LoRaGotchi targets in this tree
 
-### ThinkNode M2
+| MeshCore Node | Build Environment |
+| --- | --- |
+| ThinkNode M2 | ThinkNode_M2_LoRaFish_companion_ble |
+| Heltec V3 | Heltec_v3_LoRaFish_companion_ble |
+| Heltec V4 | heltec_v4_LoRaFish_companion_ble |
+| M5Stack CardPuter | cardputer_loragotchi |
+| Heltec T114 | Heltec_t114_LoRaFish_companion_ble -t create_uf2 |
+| Heltec T096 | Heltec_t096_LoRaFish_companion_ble -t create_uf2 |
+| LilyGo T-Deck | LilyGo_TDeck_loragotchi_dx_ble / LilyGo_TDeck_loragotchi_dx_usb |
 
-PlatformIO environment:
+| Untested nodes | build Environment |
+| --- | --- |
+| T-Beam (SX1262) | Tbeam_SX1262_LoRaFish_companion_ble
+| T-Beam (SX1276) | Tbeam_SX1276_LoRaFish_companion_ble
 
-```bash
-pio run -e ThinkNode_M2_LoRaFish_companion_ble
-```
+## Additional experimental TFT/OLED devices
 
-### Heltec WiFi LoRa 32 V3
-
-PlatformIO environment:
-
-```bash
-pio run -e Heltec_v3_LoRaFish_companion_ble
-```
-
-### Heltec WiFi LoRa 32 V4 (OLED)
-
-PlatformIO environment:
-
-```bash
-pio run -e heltec_v4_LoRaFish_companion_ble
-```
-
-### Heltec T096 (nRF52840, TFT)
-
-PlatformIO environment:
-
-```bash
-pio run -e Heltec_t096_LoRaFish_companion_ble -t create_uf2
-```
-
-The T096 target uses its existing BLE companion transport, TFT display, and external GNSS support. After the build, enter the board's UF2 bootloader and copy `.pio/build/Heltec_t096_LoRaFish_companion_ble/firmware.uf2` to its mounted drive. Device-level validation is still needed.
-
-LoRaGotchi appearance settings are in **Options**. Color TFTs offer four firmware themes and six fish colors; monochrome OLEDs offer dark and paper themes, while fish color selections are saved but cannot be shown in color on the OLED.
-
-The project tree also retains the wider upstream MeshCore targets and infrastructure from which LoRaGotchi is derived.
+See the [experimental screen target matrix](docs/EXPERIMENTAL-SCREEN-TARGETS.md).
+These additional builds are **experimental and have not been tested on real hardware**.
+Screenless and e-ink variants are excluded; optional-display boards require a fitted panel and controls.
 
 ## Building
 
@@ -61,24 +81,40 @@ Install PlatformIO, clone the repository, then build the required environment fr
 ```bash
 git clone <your-repository-url>
 cd LoRaGotchi-DX
-pio run -e ThinkNode_M2_LoRaFish_companion_ble
+pio run -e [BUILD ENVIRONMENT]
 ```
+⚠️ The build environment is Case Specific!
 
-or:
-
+Examples:
 ```bash
-pio run -e Heltec_v3_LoRaFish_companion_ble
+git clone <your-repository-url>
+cd LoRaGotchi-DX
+pio run -e Heltec_t114_LoRaFish_companion_ble -t create_uf2
 ```
+The resulting file will end up in `LoRagotchi-DX-main\.pio\build\Heltec_t114_LoRaFish_companion_ble\firmware.uf2`
+NRF52 devices, After the build, enter the board's UF2 bootloader and copy `firmware.uf2` to its mounted drive. 
+```bash
+git clone <your-repository-url>
+cd LoRaGotchi-DX
+pio run -e heltec_v4_LoRaFish_companion_ble
+```
+The resulting file will end up in `LoRagotchi-DX-main\.pio\build\heltec_v4_LoRaFish_companion_ble\firmware.bin`
+Upload with PlatformIO using the normal `-t upload` target for supported serial-programmed boards. The T096 uses -t create_uf2 and the UF2 procedure above.
+the meshcore.io/flasher also works, scroll to the bottom and select custom device firmware!
 
-Upload with PlatformIO using the normal `-t upload` target for supported serial-programmed boards. The T096 uses the UF2 procedure above.
+### Buzzer pins
 
-## DX behaviour
+LoRaFish buzzer outputs are assigned per board:
 
-A LoRaGotchi can request a visit to another compatible peer. The peer reserves a guest slot, acknowledges the request, accepts the committed visitor, and confirms arrival. Recall returns the visiting fish to its home device. Protocol messages are designed to tolerate repeated transaction messages during a session.
+| Device | Buzzer pin |
+| --- | --- |
+| ThinkNode M2 | GPIO5 |
+| Heltec WiFi LoRa 32 V3 | GPIO6 |
+| Heltec WiFi LoRa 32 V4 OLED | GPIO6 |
+| Heltec T114 | GPIO46 / P1.14 |
+| Heltec T096 | GPIO45 / P1.13 |
 
-DX commits include the visitor's color capability and selected fish color. Color-capable tanks render colored visitors in their chosen hue and monochrome visitors in cyan; monochrome displays render visitors using the active foreground color. A fish returning from a monochrome host briefly shakes back into its saved home color.
-
-DX travel state is intentionally **session state** in v1.0: rebooting a LoRaGotchi returns its local fish home and empties its guest slot. Normal pet/game state remains persistent.
+The project tree also retains the wider upstream MeshCore targets and infrastructure from which LoRaGotchi is derived.
 
 ## Project history
 

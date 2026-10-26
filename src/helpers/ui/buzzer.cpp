@@ -21,7 +21,7 @@ void genericBuzzer::play(const char *melody) {
         rtttl::stop();
     }
 
-    if (_is_quiet) return;
+    if (_is_quiet || _volume == 0) return;
 
     rtttl::begin(PIN_BUZZER,melody);
 //    Serial.print("DBG: Playing melody - isQuiet: ");
@@ -33,7 +33,26 @@ bool genericBuzzer::isPlaying() {
 }
 
 void genericBuzzer::loop() {
-    if (!rtttl::done()) rtttl::play();
+    if (!rtttl::done()) {
+      rtttl::play();
+      if (!rtttl::done()) applyVolume();
+    }
+}
+
+void genericBuzzer::setVolume(uint8_t volume) {
+    _volume = volume > 4 ? 4 : volume;
+    if (_volume == 0 && rtttl::isPlaying()) rtttl::stop();
+}
+
+void genericBuzzer::applyVolume() {
+#ifdef ESP32
+    static const uint16_t duty[] = {0, 128, 256, 384, 512};
+#if defined(ESP_ARDUINO_VERSION) && ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+    ledcWrite(PIN_BUZZER, duty[_volume]);
+#else
+    ledcWrite(0, duty[_volume]);
+#endif
+#endif
 }
 
 void genericBuzzer::startup() {
